@@ -1,2 +1,7 @@
 vendor/live2dcubismcore.min.js
-node_modules
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+*.tsbuildinfo
