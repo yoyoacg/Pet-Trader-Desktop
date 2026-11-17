@@ -1,0 +1,144 @@
+/* 透明窗口必须清除 html 的背景；仅清除 body 仍会显示全局页面底色。 */
+html.pet-window,
+html.pet-window body,
+html.pet-window #root {
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 连续动画由 Canvas 按原始帧时长播放，不再叠加九宫格的 CSS 摇摆。 */
+.sequence-pet { width: var(--pet-art-width); height: var(--pet-art-height); pointer-events: none; }
+/* 奶油粉气泡固定在角色上方，长句收为三行，完整文字可悬停查看。 */
+.pet-scene .pet-speech { display: flex; align-items: flex-start; gap: 7px; text-align: left; background: #fff7fa; border: 1px solid #efcadb; border-radius: 19px; box-shadow: 0 4px 12px #b56e9020; color: #805a71; }
+/* 浮动外框随气泡收缩，人偶始终以窗口底部为定位基准。 */
+.pet-scene .pet-speech-hidden { visibility: hidden; pointer-events: none; }
+.floating-pet .pet-speech-hidden { display: none; }
+.pet-scene .pet-speech::after { border-top-color: #efcadb; left: 48%; }
+.pet-speech-heart { color: #d88aac; font-size: 17px; line-height: 1.3; }
+.pet-speech-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.floating-pet .pet-speech { max-height: none; overflow: visible; flex-shrink: 0; padding: 10px 12px; font-size: 11px; }
+.floating-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; gap: 10px; }
+.floating-pet .pet-body { width: var(--pet-body-width); height: var(--pet-art-height); flex-shrink: 0; transform-origin: 50% 100%; }
+
+/* 将内容限制在窗口视口内，气泡、动画和错误信息都不扩大绘制区域。 */
+.pet-window .floating-pet { width: 100%; height: 100%; overflow: hidden; contain: paint; }
+.floating-pet .pet-body { touch-action: none; user-select: none; }
+
+/* 九种表情不是连续帧，使用身体动作保留表情语义。 */
+.sprite-pet {
+  background-repeat: no-repeat;
+  transform-origin: 50% 90%;
+  animation: pet-breathe 2.4s ease-in-out infinite;
+}
+.sprite-pet[data-emotion="thinking"],
+.sprite-pet[data-emotion="angry"] {
+  animation: pet-sway 1.6s ease-in-out infinite;
+}
+.sprite-pet[data-emotion="happy"],
+.sprite-pet[data-emotion="proud"],
+.sprite-pet[data-emotion="surprised"] {
+  animation: pet-hop 1.2s ease-in-out infinite;
+}
+.sprite-pet[data-emotion="working"] {
+  animation: pet-sway .7s ease-in-out infinite;
+}
+.sprite-pet[data-emotion="sleepy"],
+.sprite-pet[data-emotion="sad"] {
+  animation-duration: 4s;
+}
+/* 每轮只播放一次，下一次动作由随机休息计时器触发。 */
+.pet-scene .sprite-pet { animation-iteration-count: 1; }
+.pet-scene .sprite-pet[data-active="false"] { animation: none; }
+
+/* 气泡横向展开在人偶左侧，右侧整列只留给人偶，避免界面压在头顶。 */
+html.panel-window,
+html.panel-window body,
+html.panel-window #root { width: 100%; height: 100%; background: transparent; overflow: hidden; }
+.bubble-panel { position: relative; height: 100%; padding: 12px 280px 12px 12px; }
+.bubble-surface { position: relative; display: flex; flex-direction: column; height: 100%; background: #f0f5fa; border: 1px solid #d3e2ed; border-radius: 24px; box-shadow: 0 5px 14px #23374b25; }
+.bubble-surface::after { content: ""; position: absolute; right: -14px; bottom: 90px; width: 26px; height: 26px; transform: rotate(-45deg); background: #f0f5fa; border-right: 1px solid #d3e2ed; border-bottom: 1px solid #d3e2ed; }
+.bubble-titlebar { height: 42px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 14px 0 18px; border-bottom: 1px solid #dce7ef; color: #53738a; font-size: 11px; -webkit-app-region: drag; }
+.bubble-idle-hint { margin-left: auto; color: #8195a5; font-size: 10px; }
+.bubble-titlebar button { -webkit-app-region: no-drag; background: transparent; border: 0; padding: 3px 9px; font-size: 23px; line-height: 1; color: #70899b; }
+.bubble-titlebar button:hover { background: #e2edf5; }
+.bubble-content { flex: 1; min-height: 0; overflow: auto; border-radius: 0 0 24px 24px; position: relative; z-index: 1; }
+.panel-window .workbench { min-height: 100%; }
+.panel-window .workspace { margin-left: 0; width: 100%; min-width: 0; padding: 12px 16px 16px; }
+.panel-window .login-page { min-height: 100%; }
+.panel-window .login-art { padding: 30px; }
+.panel-window .login-art h1 { margin-top: 24px; font-size: 32px; }
+.panel-window .login-sprite { width: 190px; }
+.panel-window .login-form { padding: 28px; }
+.panel-pet { position: absolute; right: 0; bottom: 0; width: 280px; height: 330px; padding: 10px; pointer-events: none; }
+.panel-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; }
+.panel-pet .pet-speech { display: none; }
+.panel-pet .pet-body { width: var(--pet-body-width); height: var(--pet-art-height); flex-shrink: 0; pointer-events: auto; }
+.bubble-companion-message { flex-shrink: 0; max-height: 70px; overflow: auto; margin: 0; padding: 10px 18px; border-top: 1px solid #dce7ef; border-radius: 0 0 24px 24px; background: #f0f5fa; color: #60778b; font-size: 11px; }
+@media (max-width: 720px) {
+  .bubble-idle-hint { display: none; }
+  .bubble-titlebar button { margin-left: auto; }
+}
+@keyframes pet-breathe {
+  50% { transform: translateY(-6px) scale(1.025, 1.04); }
+}
+@keyframes pet-sway {
+  0%, 100% { transform: rotate(-4deg) translateY(-2px); }
+  50% { transform: rotate(4deg) translateY(-6px); }
+}
+@keyframes pet-hop {
+  0%, 100% { transform: scale(1.04, .96); }
+  50% { transform: translateY(-12px) scale(.98, 1.02); }
+}
+
+/* 走动步态（Procedural Walk）：在移动时赋予身体步频起伏、踏步微摆与前进朝向，告别僵硬平移 */
+.pet-body[data-walk-mode="procedural"][data-motion="walkLeft"] {
+  animation: pet-walk-procedural-left 0.38s ease-in-out infinite;
+}
+.pet-body[data-walk-mode="procedural"][data-motion="walkRight"] {
+  animation: pet-walk-procedural-right 0.38s ease-in-out infinite;
+}
+.pet-body[data-walk-mode="native"][data-motion="walkLeft"],
+.pet-body[data-walk-mode="native"][data-motion="walkRight"] {
+  animation: pet-walk-native-bob 0.5s ease-in-out infinite;
+}
+
+@keyframes pet-walk-procedural-left {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+  25% {
+    transform: translateY(-8px) rotate(-3deg) scale(0.97, 1.03);
+  }
+  50% {
+    transform: translateY(0) rotate(0deg) scale(1.03, 0.97);
+  }
+  75% {
+    transform: translateY(-8px) rotate(2.5deg) scale(0.97, 1.03);
+  }
+}
+
+@keyframes pet-walk-procedural-right {
+  0%, 100% {
+    transform: scaleX(-1) translateY(0) rotate(0deg) scaleY(1);
+  }
+  25% {
+    transform: scaleX(-1) translateY(-8px) rotate(-3deg) scaleY(1.03);
+  }
+  50% {
+    transform: scaleX(-1) translateY(0) rotate(0deg) scaleY(0.97);
+  }
+  75% {
+    transform: scaleX(-1) translateY(-8px) rotate(2.5deg) scaleY(1.03);
+  }
+}
+
+@keyframes pet-walk-native-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}

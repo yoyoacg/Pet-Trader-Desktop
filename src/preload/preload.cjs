@@ -1,0 +1,22 @@
+const {contextBridge,ipcRenderer}=require('electron');
+
+// 只公开固定通道，不开放通用 IPC 或磁盘路径操作。
+contextBridge.exposeInMainWorld('desktop',{
+  bootstrap:()=>ipcRenderer.invoke('bootstrap'),
+  login:input=>ipcRenderer.invoke('login',input),
+  logout:()=>ipcRenderer.invoke('logout'),
+  request:(method,path,body)=>ipcRenderer.invoke('request',method,path,body),
+  saveProfile:profile=>ipcRenderer.invoke('profile:save',profile),
+  importCharacter:()=>ipcRenderer.invoke('character:import'),
+  saveCharacter:character=>ipcRenderer.invoke('character:save',character),
+  publish:visual=>ipcRenderer.invoke('visual:publish',visual),
+  showPanel:()=>ipcRenderer.invoke('panel:show'),
+  hidePanel:()=>ipcRenderer.invoke('panel:hide'),
+  panelActivity:()=>ipcRenderer.invoke('panel:activity'),
+  dragPet:phase=>ipcRenderer.invoke('pet:drag',phase),
+  petLayout:layout=>ipcRenderer.invoke('pet:layout',layout),
+  openVPetSource:()=>ipcRenderer.invoke('vpet:source'),
+  onVisual:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('visual',listener);return()=>ipcRenderer.removeListener('visual',listener);},
+  onMotion:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('pet:motion',listener);return()=>ipcRenderer.removeListener('pet:motion',listener);},
+  onPetImpact:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('pet:impact',listener);return()=>ipcRenderer.removeListener('pet:impact',listener);},
+});

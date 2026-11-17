@@ -1,0 +1,130 @@
+{
+  "formatVersion": 1,
+  "id": "ds-whale-girl",
+  "name": "DS鲸鱼娘",
+  "author": "模型：上善无形 / ZipZipPipe / 氵六青 · 插件：A8Chann",
+  "license": "CC BY-NC-SA 4.0 (attribution, NON-COMMERCIAL, share-alike). Character: original OC by 上善无形 (https://www.pixiv.net/users/62155430); DeepSeek maid redesign by ZipZipPipe (https://www.pixiv.net/users/18604994); this Live2D model by 氵六青 (https://space.bilibili.com/11272072), who authorised redistribution here — which does NOT lift the base NC/SA terms. Commercial use requires permission from each rights holder. See NOTICE.md.",
+  "type": "live2d",
+  "aspectRatio": 1,
+  "entry": "petasset://characters/ds-whale-girl/c_0120.model3.json",
+  "states": {
+    "idle": {
+      "kind": "motion",
+      "group": "Idle",
+      "index": 0
+    },
+    "thinking": {
+      "kind": "expression",
+      "name": "问号"
+    },
+    "happy": {
+      "kind": "expression",
+      "name": "开心兴奋"
+    },
+    "sad": {
+      "kind": "expression",
+      "name": "悲伤"
+    },
+    "angry": {
+      "kind": "expression",
+      "name": "生气"
+    },
+    "proud": {
+      "kind": "expression",
+      "name": "星星眼"
+    },
+    "surprised": {
+      "kind": "expression",
+      "name": "感叹号"
+    },
+    "sleepy": {
+      "kind": "expression",
+      "name": "闭眼口水"
+    },
+    "working": {
+      "kind": "motion",
+      "group": "Idle",
+      "index": 0
+    }
+  },
+  "motions": [
+    {
+      "group": "Idle",
+      "index": 0
+    },
+    {
+      "group": "Hammer",
+      "index": 0
+    },
+    {
+      "group": "BubbleGum",
+      "index": 0
+    },
+    {
+      "group": "SprayWater",
+      "index": 0
+    },
+    {
+      "group": "OpenCase",
+      "index": 0
+    },
+    {
+      "group": "Selfie",
+      "index": 0
+    },
+    {
+      "group": "SelfieQuick",
+      "index": 0
+    },
+    {
+      "group": "Ketchup",
+      "index": 0
+    }
+  ],
+  "expressions": [
+    "脸红",
+    "爱心眼",
+    "星星眼",
+    "情绪花花",
+    "心跳",
+    "开心兴奋",
+    "悲伤",
+    "大哭",
+    "生气",
+    "晕晕",
+    "流汗",
+    "问号",
+    "感叹号",
+    "阴暗",
+    "调皮",
+    "闭眼口水",
+    "吐魂",
+    "吐舌",
+    "呆呆眼",
+    "冒爱心",
+    "圆眼镜",
+    "方眼镜",
+    "椭圆眼镜",
+    "墨镜",
+    "头箍",
+    "单边马尾",
+    "蝴蝶结贴纸",
+    "猫猫贴纸",
+    "兔兔贴纸",
+    "头顶鲸",
+    "鲸鱼放桌上",
+    "桌面巴菲",
+    "蛋包饭",
+    "桌面粉魔爪",
+    "魔爪换色",
+    "双手比耶",
+    "喵喵手",
+    "手机换色",
+    "深色桌布",
+    "画笔",
+    "橡皮",
+    "撤回",
+    "点菜按下",
+    "挤番茄酱"
+  ]
+}

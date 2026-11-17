@@ -1,0 +1,432 @@
+{
+  "formatVersion": 1,
+  "id": "builtin-vpet",
+  "name": "萝莉斯 · VPet",
+  "author": "虚拟主播模拟器制作组",
+  "license": "VPet 动画独立授权，非商用使用须标注来源；商用须联系作者",
+  "type": "sequence",
+  "entry": "petasset://vpet/",
+  "aspectRatio": 1,
+  "states": {
+    "idle": "idle",
+    "thinking": "thinking",
+    "happy": "happy",
+    "sad": "sad",
+    "angry": "sad",
+    "proud": "happy",
+    "surprised": "happy",
+    "sleepy": "sleepy",
+    "working": "working"
+  },
+  "motions": [],
+  "expressions": [],
+  "animations": {
+    "idle": [
+      {
+        "file": "idle/000.png",
+        "durationMs": 250
+      },
+      {
+        "file": "idle/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "idle/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "idle/003.png",
+        "durationMs": 375
+      },
+      {
+        "file": "idle/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "idle/005.png",
+        "durationMs": 250
+      },
+      {
+        "file": "idle/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "idle/007.png",
+        "durationMs": 125
+      }
+    ],
+    "thinking": [
+      {
+        "file": "thinking/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/005.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/007.png",
+        "durationMs": 125
+      },
+      {
+        "file": "thinking/008.png",
+        "durationMs": 125
+      }
+    ],
+    "happy": [
+      {
+        "file": "happy/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/005.png",
+        "durationMs": 250
+      },
+      {
+        "file": "happy/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/007.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/008.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/009.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/010.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/011.png",
+        "durationMs": 125
+      },
+      {
+        "file": "happy/012.png",
+        "durationMs": 250
+      }
+    ],
+    "sad": [
+      {
+        "file": "sad/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/004.png",
+        "durationMs": 375
+      },
+      {
+        "file": "sad/005.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/007.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/008.png",
+        "durationMs": 500
+      },
+      {
+        "file": "sad/009.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/010.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/011.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/012.png",
+        "durationMs": 375
+      },
+      {
+        "file": "sad/013.png",
+        "durationMs": 375
+      },
+      {
+        "file": "sad/014.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/015.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sad/016.png",
+        "durationMs": 125
+      }
+    ],
+    "sleepy": [
+      {
+        "file": "sleepy/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sleepy/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sleepy/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sleepy/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sleepy/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "sleepy/005.png",
+        "durationMs": 125
+      }
+    ],
+    "working": [
+      {
+        "file": "working/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/005.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/007.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/008.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/009.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/010.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/011.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/012.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/013.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/014.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/015.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/016.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/017.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/018.png",
+        "durationMs": 125
+      },
+      {
+        "file": "working/019.png",
+        "durationMs": 125
+      }
+    ],
+    "touch": [
+      {
+        "file": "touch/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/005.png",
+        "durationMs": 250
+      },
+      {
+        "file": "touch/006.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/007.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/008.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/009.png",
+        "durationMs": 125
+      },
+      {
+        "file": "touch/010.png",
+        "durationMs": 125
+      }
+    ],
+    "walkLeft": [
+      {
+        "file": "walkLeft/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkLeft/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkLeft/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkLeft/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkLeft/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkLeft/005.png",
+        "durationMs": 125
+      }
+    ],
+    "walkRight": [
+      {
+        "file": "walkRight/000.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkRight/001.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkRight/002.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkRight/003.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkRight/004.png",
+        "durationMs": 125
+      },
+      {
+        "file": "walkRight/005.png",
+        "durationMs": 125
+      }
+    ]
+  },
+  "source": {
+    "name": "VPet · 虚拟主播模拟器制作组",
+    "url": "https://github.com/LorisYounger/VPet",
+    "notice": "动画版权属于虚拟主播模拟器制作组。非商用使用须告知来源并链接原项目；商用还须首次醒目提示、保留可访问的来源页并联系 zoujin.dev@exlb.org，禁止出售动画文件盈利。分发须附全部授权信息及原项目链接，动画文件不得收费。"
+  }
+}
