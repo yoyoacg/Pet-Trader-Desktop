@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { Account, Book, Bootstrap, Character, Emotion, Order, OrderIntent, PetMotion, Profile, Session, Stock, Trade, Visual } from '../shared/types';
+import type { Account, AIConfig, Book, Bootstrap, Character, Emotion, Order, OrderIntent, PetMotion, Profile, Session, Stock, Trade, Visual } from '../shared/types';
 import { api, money } from './api';
-import { decideOrder } from './pet/strategy';
+import { buildAICandidates, decideOrder } from './pet/strategy';
 import { remember, review } from './pet/memory';
-import { idleDialogue, tradeDialogue } from './pet/dialogue';
+import { idleDialogue, offlineChatReply, tradeDialogue } from './pet/dialogue';
 import { Pet } from './Pet';
 import { TradingPanel } from './TradingPanel';
 import { TradeHistory } from './TradeHistory';
@@ -36,6 +36,19 @@ export function App() {
   return isPet ? <PetWindow /> : <BubblePanel visual={visual}><Workbench onVisual={setVisual} /></BubblePanel>;
 }
 
+function getAvailableActions(character: Character): string[] {
+  const base = ['jump', 'spin', 'bow', 'shake', 'headpat', 'poke', 'tail'];
+  const custom = Object.keys(character.customActions ?? {});
+  const specific = character.type === 'puppet'
+    ? Object.keys(character.puppet?.poses ?? {})
+    : character.type === 'sequence'
+      ? Object.keys(character.animations ?? {})
+      : character.type === 'live2d'
+        ? [...character.motions.map(item => item.group), ...character.expressions]
+        : [];
+  return [...new Set([...base, ...custom, ...specific])];
+}
+
 function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -44,7 +57,9 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [live2dReady, setLive2dReady] = useState(false);
   const [stocks, setStocks] = useState<Stock[]>([]);
+  const stocksRef = useRef<Stock[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
+  const accountRef = useRef<Account | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [book, setBook] = useState<Book | null>(null);
   const [selected, setSelected] = useState('EASY');
@@ -55,6 +70,8 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const lastDecision = useRef(0);
+  const lastSpokenAt = useRef(0);
+  const nextProactiveAt = useRef(Date.now() + 35000);
   const [updated, setUpdated] = useState('尚未连接');
   // 默认服务端地址由桌面端 .env 配置，缺失或格式错误直接报错。
   const [url, setURL] = useState(() => new URL(import.meta.env.VITE_API_BASE_URL).origin);
@@ -62,12 +79,31 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
   const [budget, setBudget] = useState('10000');
+  const [persona, setPersona] = useState('');
+  const [chatText, setChatText] = useState('');
+  const [aiConfig, setAIConfig] = useState<AIConfig>({enabled: false, endpoint: '', model: '', imageEndpoint: '', imageModel: '', hasApiKey: false});
+  const aiConfigRef = useRef<AIConfig>(aiConfig);
+  const [aiEnabled, setAIEnabled] = useState(false);
+  const [aiEndpoint, setAIEndpoint] = useState('');
+  const [aiModel, setAIModel] = useState('');
+  const [aiImageEndpoint, setAIImageEndpoint] = useState('');
+  const [aiImageModel, setAIImageModel] = useState('');
+  const [aiKey, setAIKey] = useState('');
+  const [aiStatus, setAIStatus] = useState('');
+  const actionSeq = useRef(0);
   useEffect(() => onVisual(visual), [visual, onVisual]);
 
   function restore(data: Bootstrap) {
     current.current = data.profile;
     setSession(data.session); setProfile(data.profile); setCharacters(data.characters); setLive2dReady(data.live2dReady);
-    if (data.profile) { setBudget(String(data.profile.budgetCents / 100)); setVisual({character: data.profile.character, ...idleDialogue(data.profile)}); }
+    setAIConfig(data.aiConfig); aiConfigRef.current = data.aiConfig;
+    setAIEnabled(data.aiConfig.enabled); setAIEndpoint(data.aiConfig.endpoint); setAIModel(data.aiConfig.model);
+    setAIImageEndpoint(data.aiConfig.imageEndpoint); setAIImageModel(data.aiConfig.imageModel); setAIKey('');
+    if (data.profile) {
+      setBudget(String(data.profile.budgetCents / 100));
+      setPersona(data.profile.persona);
+      setVisual({character: data.profile.character, ...idleDialogue(data.profile)});
+    }
     else setVisual({character: data.characters[0], emotion: 'idle', text: '老板，连接交易所就能开工了。'});
     setReady(true);
   }
@@ -86,9 +122,68 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     current.current = next; setProfile(next);
     await window.desktop.saveProfile(next);
   }
-  async function speak(emotion: Emotion, text: string) {
-    const next = {character: current.current!.character, emotion, text};
+  async function speak(emotion: Emotion, text: string, overrideCharacter?: Character, actionName?: string) {
+    lastSpokenAt.current = Date.now();
+    if (actionName) actionSeq.current += 1;
+    const next: Visual = {
+      character: overrideCharacter ?? current.current!.character,
+      emotion,
+      text,
+      action: actionName ? {name: actionName, seq: actionSeq.current, durationMs: 4500} : undefined,
+    };
     setVisual(next); await window.desktop.publish(next);
+  }
+  async function triggerProactiveChat(trigger: string) {
+    nextProactiveAt.current = Date.now() + 40000 + Math.floor(Math.random() * 35000);
+    const assets = accountRef.current;
+    const market = stocksRef.current;
+    const equityVal = assets && market.length > 0
+      ? assets.availableCents + assets.frozenCents + assets.positions.reduce((sum, position) => {
+          const stock = market.find(item => item.code === position.stockCode);
+          return sum + (position.available + position.frozen) * (stock ? (stock.lastCents ?? stock.referenceCents) : 10000);
+        }, 0)
+      : 0;
+    const equitySummary = assets
+      ? `总资产 ${money(equityVal)}（相对初始 ${money(equityVal - assets.initialEquityCents)}），可用现金 ${money(assets.availableCents)}`
+      : '尚未同步账户资产';
+    const marketSummary = market.map(item => `${item.name}(${item.code}):${money(item.lastCents ?? item.referenceCents)}`).join('，');
+    const char = current.current!.character;
+    const result = await window.desktop.aiProactiveChat({
+      time: new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'}),
+      trigger,
+      persona: current.current!.persona,
+      trust: current.current!.trust,
+      auto: current.current!.auto,
+      equitySummary,
+      marketSummary,
+      recentMemories: current.current!.memories.slice(-6).map(item => item.text),
+      characterId: char.id,
+      characterType: char.type,
+      availableActions: getAvailableActions(char),
+    });
+    let activeChar = char;
+    if (result.generatedAction) {
+      activeChar = result.generatedAction.character;
+      setCharacters(items => items.map(item => item.id === activeChar.id ? activeChar : item));
+    }
+    const actionLabel = result.generatedAction ? ` [新生成动作：${result.generatedAction.name}]` : result.action ? ` [动作：${result.action}]` : '';
+    await mutate(value => remember({...value, character: activeChar}, 'chat', `小秘书主动说：“${result.reply}”${actionLabel}`));
+    await speak(result.emotion, result.reply, activeChar, result.action);
+  }
+  async function generateReviewText(baseProfile: Profile): Promise<string | undefined> {
+    if (!aiConfigRef.current.enabled || (baseProfile.cycles + 1) % 10 !== 0) return undefined;
+    const recent = baseProfile.memories.slice(-20);
+    const trades = recent.filter(item => item.kind === 'trade');
+    const criticism = recent.findLast(item => item.kind === 'reaction');
+    const result = await window.desktop.aiReview({
+      cycles: baseProfile.cycles + 1,
+      persona: baseProfile.persona,
+      trust: baseProfile.trust,
+      tradeCount: trades.length,
+      criticism: criticism ? criticism.text : '',
+      recentMemories: recent.slice(-8).map(item => item.text),
+    });
+    return result.text;
   }
   // 网络请求可能超过轮询间隔，禁止两个本地循环重叠提交委托。
   function perform(task: () => Promise<void>) {
@@ -98,6 +193,7 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   }
   async function synchronize() {
     const [market, assets, open] = await Promise.all([api<Stock[]>('GET', '/api/market'), api<Account>('GET', '/api/me/account'), api<Order[]>('GET', '/api/me/orders')]);
+    stocksRef.current = market; accountRef.current = assets;
     setStocks(market); setAccount(assets); setOrders(open);
     setBook(await api<Book>('GET', `/api/stocks/${selectedRef.current}/book`));
     let page: Trade[];
@@ -109,7 +205,12 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
           for (const trade of page) next = remember(next, 'trade', `${trade.side === 'buy' ? '买入' : '卖出'} ${trade.quantity} 股 ${trade.stockCode}，成交价 ${money(trade.priceCents)}；成交 #${trade.id}`, trade.stockCode);
           return {...next, lastTradeId: page[page.length - 1].id};
         });
-        const response = tradeDialogue(page[page.length - 1]); await speak(response.emotion, response.text);
+        const latestTrade = page[page.length - 1];
+        if (aiConfigRef.current.enabled) {
+          await triggerProactiveChat(`刚达成一笔真实成交：${latestTrade.side === 'buy' ? '买入' : '卖出'} ${latestTrade.quantity} 股 ${latestTrade.stockCode}，成交单价 ${money(latestTrade.priceCents)}`);
+        } else {
+          const response = tradeDialogue(latestTrade); await speak(response.emotion, response.text);
+        }
       }
     } while (page.length === 100);
     setUpdated(`已同步 ${new Date().toLocaleTimeString('zh-CN')}`);
@@ -120,6 +221,42 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
         for (const order of expired) await api('DELETE', `/api/orders/${order.id}`);
         await mutate(value => review(remember(value, 'decision', `已申请撤销 ${expired.length} 笔满五分钟的挂单；本轮不补单。`)));
         await speak('thinking', '挂单等了五分钟，先撤回来重新想想。');
+      } else if (aiConfigRef.current.enabled) {
+        const candidates = buildAICandidates(market, assets, open, current.current!);
+        if (candidates.length === 0) {
+          // 所有股票均已有挂单或可用额度不足时直接跳过 AI 请求，避免空转消耗 Token。
+          const aiReviewText = await generateReviewText(current.current!);
+          await mutate(value => review(remember(value, 'decision', '本轮观望：无可买或可卖候选股票，已跳过 AI 调用。'), aiReviewText));
+          await speak('thinking', '这轮没有可下单额度或都已经挂着单子了，我先省省脑力继续盯盘。');
+        } else {
+          const decision = await window.desktop.aiDecide({
+            persona: current.current!.persona,
+            trust: current.current!.trust,
+            availableCents: assets.availableCents,
+            remainingBudgetCents: Math.max(0, current.current!.budgetCents - assets.frozenCents),
+            candidates,
+            recentMemories: current.current!.memories.slice(-6).map(item => item.text),
+          });
+          if (decision.action === 'hold') {
+            const withMemory = remember(current.current!, 'decision', `AI 观望：${decision.reason}`);
+            const aiReviewText = await generateReviewText(withMemory);
+            await mutate(() => review(withMemory, aiReviewText));
+            await speak(decision.emotion, decision.dialogue);
+          } else {
+            const intent: OrderIntent = {
+              clientOrderId: crypto.randomUUID(),
+              stockCode: decision.stockCode,
+              side: decision.action,
+              priceCents: decision.priceCents,
+              quantity: decision.quantity,
+            };
+            const withMemory = remember(current.current!, 'decision', `AI 决定${intent.side === 'buy' ? '买入' : '卖出'} ${intent.quantity} 股 ${intent.stockCode}，限价 ${money(intent.priceCents)}（${decision.reason}）`, intent.stockCode);
+            const aiReviewText = await generateReviewText(withMemory);
+            await mutate(() => review({...withMemory, pendingOrder: intent}, aiReviewText));
+            await speak(decision.emotion, decision.dialogue);
+            await submitPending();
+          }
+        }
       } else {
         const intent = decideOrder(market, assets, open, current.current!);
         if (intent) {
@@ -131,6 +268,10 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
           await speak('thinking', '这轮先观望。没有合适的委托，比乱买更像一个负责任的秘书。');
         }
       }
+    }
+    // 开启本地 AI 后，即使未开启自动交易或在巡市间隙，小秘书也会每隔 40–75 秒主动找老板搭话陪伴。
+    if (aiConfigRef.current.enabled && Date.now() >= nextProactiveAt.current && Date.now() - lastSpokenAt.current >= 25000) {
+      await triggerProactiveChat(current.current!.auto ? '日常盯盘间隙主动找老板闲聊陪伴' : '待命休息时主动关心或调侃老板');
     }
   }
   async function submitPending() {
@@ -223,6 +364,82 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     await mutate(value => ({...remember(value, 'reaction', text), trust: Math.max(0, Math.min(100, value.trust + {praise: 3, comfort: 2, criticize: -3}[kind])), review: {...value.review!, reacted: true}}));
     await speak(kind === 'criticize' ? 'angry' : 'happy', kind === 'criticize' ? '批评收到了。我记住的是你这句话，不是凭空编一笔亏损。' : '这句话我记下了，下次写复盘就有底气了。');
   }
+  async function savePersonaSetting() {
+    const trimmed = persona.trim();
+    if (!trimmed) throw new Error('人设描述不能为空');
+    await mutate(value => remember({...value, persona: trimmed}, 'command', `老板更新了小秘书人设：${trimmed}`));
+    await speak('happy', `新性格设定记住了！以后我就按「${trimmed}」的风格陪你盯盘。`);
+  }
+  async function chatWithPet(rawMessage: string) {
+    const message = rawMessage.trim();
+    if (!message) return;
+    if (!current.current) {
+      const fallback = {character: characters[0], emotion: 'idle' as const, text: '老板，先登录交易所，我们就能开始对话和记录共同记忆啦！'};
+      setVisual(fallback); await window.desktop.publish(fallback);
+      return;
+    }
+    const assets = accountRef.current;
+    const summary = assets ? `可用现金 ${money(assets.availableCents)}，冻结 ${money(assets.frozenCents)}` : '尚未同步账户资产';
+    const char = current.current.character;
+    const response = aiConfigRef.current.enabled
+      ? await window.desktop.aiChat({
+          message,
+          persona: current.current.persona,
+          trust: current.current.trust,
+          auto: current.current.auto,
+          equitySummary: summary,
+          recentMemories: current.current.memories.slice(-8).map(item => item.text),
+          characterId: char.id,
+          characterType: char.type,
+          availableActions: getAvailableActions(char),
+        })
+      : {...offlineChatReply(message, current.current), action: 'jump', generatedAction: undefined};
+    let activeChar = char;
+    if (response.generatedAction) {
+      activeChar = response.generatedAction.character;
+      setCharacters(items => items.map(item => item.id === activeChar.id ? activeChar : item));
+    }
+    const actionLabel = response.generatedAction ? ` [新生成动作：${response.generatedAction.name}]` : response.action ? ` [动作：${response.action}]` : '';
+    await mutate(value => remember({...value, character: activeChar}, 'chat', `老板：“${message}” → 小秘书：“${response.reply}”${actionLabel}`));
+    await speak(response.emotion, response.reply, activeChar, response.action);
+  }
+  async function sendChat(event: FormEvent) {
+    event.preventDefault();
+    const message = chatText.trim();
+    if (!message) return;
+    setChatText('');
+    await chatWithPet(message);
+  }
+  useEffect(() => {
+    return window.desktop.onPetChat(text => {
+      void chatWithPet(text);
+    });
+  }, [characters]);
+  async function saveAISetting() {
+    const saved = await window.desktop.saveAIConfig({
+      enabled: aiEnabled,
+      endpoint: aiEndpoint,
+      model: aiModel,
+      imageEndpoint: aiImageEndpoint,
+      imageModel: aiImageModel,
+      apiKey: aiKey,
+    });
+    setAIConfig(saved); aiConfigRef.current = saved;
+    setAIEnabled(saved.enabled); setAIEndpoint(saved.endpoint); setAIModel(saved.model);
+    setAIImageEndpoint(saved.imageEndpoint); setAIImageModel(saved.imageModel); setAIKey('');
+    setAIStatus(saved.enabled ? `已保存并启用（${saved.endpoint}）` : '配置已保存（未启用）');
+    await speak('happy', saved.enabled ? '本地 AI 接口已启用，随时可以点“测试连接”或直接跟我说话验证！' : '本地 AI 配置已保存，当前使用本地规则策略。');
+  }
+  async function testAISetting() {
+    setAIStatus('正在向模型发送连接测试请求…');
+    const result = await window.desktop.testAIConfig({
+      endpoint: aiEndpoint,
+      model: aiModel,
+      apiKey: aiKey,
+    });
+    setAIStatus(`连接成功 · 响应模型：${result.model} · 回复：“${result.reply}”`);
+    await speak(result.emotion, result.reply);
+  }
   async function logout() {
     await mutate(value => ({...value, auto: false}));
     await window.desktop.logout();
@@ -244,9 +461,39 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
         {tab === 'market' && account && <TradingPanel stocks={stocks} account={account} orders={orders} profile={profile!} book={book} selected={selected} select={code => {selectedRef.current = code;setSelected(code);setBook(null);perform(async () => setBook(await api<Book>('GET', `/api/stocks/${code}/book`)));}} cancel={id => perform(async () => {await api('DELETE', `/api/orders/${id}`);await mutate(value => remember(value, 'command', `老板撤销委托 #${id}`));await synchronize();})} ban={code => perform(() => ban(code))} busy={busy} place={async intent => {await perform(() => placeManualOrder(intent));}} />}
         {tab === 'market' && !account && <section className="surface empty">正在读取公共市场和账户…</section>}
         {tab === 'trades' && <TradeHistory />}
-        {tab === 'character' && <CharacterImport characters={characters} current={profile!.character} live2dReady={live2dReady} change={changeCharacter} importFile={importFile} save={async character => {await window.desktop.saveCharacter(character);setCharacters(items => items.map(item => item.id === character.id ? character : item));await speak('happy', '角色包配置已经保存在本机。');}} />}
+        {tab === 'character' && <CharacterImport characters={characters} current={profile!.character} live2dReady={live2dReady} change={changeCharacter} importFile={importFile} preview={speak} save={async character => {await window.desktop.saveCharacter(character);setCharacters(items => items.map(item => item.id === character.id ? character : item));await speak('happy', '角色包配置已经保存在本机。');}} />}
         {tab === 'memory' && <section className="surface"><div className="section-head"><div><h2>共同经历</h2><p>保存在这台电脑，交易所看不到。</p></div><span className="badge">{profile!.memories.length} 条</span></div>{profile!.memories.length === 0 && <p className="empty">你们的第一段经历还没发生。先让它开始营业吧。</p>}<div className="memory-list">{profile!.memories.slice(-80).reverse().map(memory => <article key={memory.id}><time>{new Date(memory.time).toLocaleString('zh-CN')}</time><p>{memory.text}</p></article>)}</div></section>}
-      </div>}{tab === 'assistant' && <section className="assistant-settings"><section className="pet-card"><span className="caption">{profile!.character.name} / 你的专属小秘书</span><button className="primary" disabled={busy || (!profile!.auto && profile!.pendingOrder !== null)} onClick={() => perform(toggleAuto)}>{profile!.auto ? '暂停并撤销挂单' : '让它开始营业'}</button><label>交易资金上限 · 虚拟元<div className="budget"><input type="number" min="0" step="0.01" value={budget} onChange={event => setBudget(event.target.value)} /><button disabled={busy} onClick={() => perform(async () => {const cents = Math.round(Number(budget) * 100);if (!Number.isSafeInteger(cents) || cents < 0) throw new Error('资金上限必须为非负金额');await mutate(value => remember({...value, budgetCents: cents}, 'command', `老板把交易预算改为 ${money(cents)}，只影响后续买单。`));await speak('idle', '新预算记下了，已经挂出的单子不会因此自动撤销。');})}>保存</button></div></label><p className="hint">每分钟决定一次，每次最多使用可用现金的 20%。暂停会请求撤单，退出账户会保留挂单。</p></section>
+      </div>}{tab === 'assistant' && <section className="assistant-settings"><section className="pet-card"><span className="caption">{profile!.character.name} / 你的专属小秘书（{aiConfig.enabled ? '本地 AI 驱动中' : '本地预设规则'}）</span><button className="primary" disabled={busy || (!profile!.auto && profile!.pendingOrder !== null)} onClick={() => perform(toggleAuto)}>{profile!.auto ? '暂停并撤销挂单' : '让它开始营业'}</button><label>交易资金上限 · 虚拟元<div className="budget"><input type="number" min="0" step="0.01" value={budget} onChange={event => setBudget(event.target.value)} /><button disabled={busy} onClick={() => perform(async () => {const cents = Math.round(Number(budget) * 100);if (!Number.isSafeInteger(cents) || cents < 0) throw new Error('资金上限必须为非负金额');await mutate(value => remember({...value, budgetCents: cents}, 'command', `老板把交易预算改为 ${money(cents)}，只影响后续买单。`));await speak('idle', '新预算记下了，已经挂出的单子不会因此自动撤销。');})}>保存</button></div></label><p className="hint">每分钟决定一次，每次最多使用可用现金的 20%。暂停会请求撤单，退出账户会保留挂单。</p></section>
+        <section className="surface">
+          <div className="section-head"><div><h2>小秘书人设与互动对话</h2><p>开启本地 AI 后，小秘书平时会主动找你搭话闲聊；对话与人设只保存在本机。</p></div>{aiConfig.enabled && <button type="button" disabled={busy} onClick={() => perform(() => triggerProactiveChat('老板点了一下你，主动跟老板聊两句'))}>让它主动找我聊聊</button>}</div>
+          <label>小秘书性格与人设设定<div className="budget"><input value={persona} maxLength={160} onChange={event => setPersona(event.target.value)} placeholder="例如：嘴硬、爱邀功、实际对老板非常负责的交易小秘书" /><button type="button" disabled={busy} onClick={() => perform(savePersonaSetting)}>保存人设</button></div></label>
+          <form className="chat-form" onSubmit={sendChat}>
+            <label>跟小秘书说句话<div className="budget"><input value={chatText} maxLength={160} onChange={event => setChatText(event.target.value)} placeholder="问问它的持仓想法、表扬或者随便聊聊天…" /><button className="primary" disabled={busy || !chatText.trim()}>发送</button></div></label>
+          </form>
+          {profile!.memories.some(item => item.kind === 'chat') && <div className="chat-history">
+            <span className="caption">最近聊天记录（包含小秘书主动搭话）</span>
+            {profile!.memories.filter(item => item.kind === 'chat').slice(-6).reverse().map(item => <p key={item.id}><time>{new Date(item.time).toLocaleTimeString('zh-CN')}</time>{item.text}</p>)}
+          </div>}
+        </section>
+        <section className="surface">
+          <div className="section-head"><div><h2>本地 AI 接口配置</h2><p>支持本地 LM Studio / Ollama（无需密钥）及云端 OpenAI 兼容接口；密钥经系统加密保存，不发给交易所。</p></div><span className="badge">{aiConfig.hasApiKey ? '已加密保存密钥' : '无密钥 / 本地模式'}</span></div>
+          <label className="checkbox-row"><input type="checkbox" checked={aiEnabled} onChange={event => setAIEnabled(event.target.checked)} />启用本地 AI 驱动（自主交易决策、个性化复盘与人设对话）</label>
+          <div className="field-row">
+            <label>对话接口地址（支持 `/v1` 自动补全）<input type="url" value={aiEndpoint} onChange={event => setAIEndpoint(event.target.value)} placeholder="如 http://localhost:1234/v1 或完整 /v1/chat/completions" /></label>
+            <label>对话模型名称（填 API 模型标识符）<input value={aiModel} onChange={event => setAIModel(event.target.value)} placeholder="如 qwen-2.5-7b-instruct-novel-lora" /></label>
+          </div>
+          <div className="field-row">
+            <label>生图接口地址（可选，用于追加新动作精灵图）<input type="url" value={aiImageEndpoint} onChange={event => setAIImageEndpoint(event.target.value)} placeholder="留空则用内置精灵图合成器；或填 /v1/images/generations" /></label>
+            <label>生图模型名称（可选）<input value={aiImageModel} onChange={event => setAIImageModel(event.target.value)} placeholder="留空使用内置动作图合成，或填生图模型名" /></label>
+          </div>
+          <label>API Key（本地模型如 LM Studio 可直接留空；{aiConfig.hasApiKey ? '留空保留已有密钥' : '云端接口请填密钥'}）<input type="password" value={aiKey} onChange={event => setAIKey(event.target.value)} placeholder={aiConfig.hasApiKey ? '••••••••（已加密保存，留空不变）' : '本地模型留空即可，云端接口填 API Key'} /></label>
+          <div className="reactions">
+            <button type="button" className="primary" disabled={busy} onClick={() => perform(saveAISetting)}>保存 AI 配置</button>
+            <button type="button" disabled={busy || !aiEndpoint.trim() || !aiModel.trim()} onClick={() => perform(testAISetting)}>测试 AI 连接</button>
+          </div>
+          {aiStatus && <p className="notice">{aiStatus}</p>}
+          <p className="hint">AI 委托仍受本地单次 20% 限额、总预算上限、禁买名单及当日涨跌停双重校验；无候选可交易股票时自动跳过 AI 调用以节省 Token。</p>
+        </section>
         {profile!.pendingOrder && <section className="surface pending"><h2>有一笔委托待核对</h2><p>未确认前停止自动创建新单。</p><code>{profile!.pendingOrder.clientOrderId}</code><button disabled={busy} onClick={() => perform(reconcile)}>查询交易所记录</button><button disabled={busy || !profile!.auto} onClick={() => perform(submitPending)}>用原编号重新提交</button><button disabled={busy} onClick={() => perform(abandonPending)}>放弃并取消原委托</button></section>}
         {profile!.review && <section className="surface"><span className="eyebrow">小秘书的复盘</span><p>{profile!.review.text}</p><div className="reactions">{(['praise','comfort','criticize'] as const).map((kind, index) => <button key={kind} disabled={busy || profile!.review!.reacted} onClick={() => perform(() => reaction(kind))}>{['表扬','安慰','批评'][index]}</button>)}</div></section>}
       </section>}</div><footer>这是虚拟交易游戏。没有真实充值、证券或提现。关闭客户端不等于撤单。</footer>

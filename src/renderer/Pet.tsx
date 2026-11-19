@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent, PointerEvent } from 'react';
+import type { CSSProperties, FormEvent, MouseEvent, PointerEvent } from 'react';
 import type { PetMotion, Visual } from '../shared/types';
 import { SpritePet } from './characters/SpritePet';
 import { Live2DPet } from './characters/Live2DPet';
@@ -35,13 +35,19 @@ export function Pet({visual, motion = 'idle', draggable = false}: {visual: Visua
   const [interaction, setInteraction] = useState<PuppetInteraction>({kind: null, seq: 0});
   const [tempBubble, setTempBubble] = useState<string | null>(null);
   const [speechVisible, setSpeechVisible] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [activeAction, setActiveAction] = useState<string | null>(null);
   const touchTimer = useRef<number | undefined>(undefined);
   const bubbleTimer = useRef<number | undefined>(undefined);
+  const actionTimer = useRef<number | undefined>(undefined);
   const drag = useRef<{x: number; y: number} | null>(null);
   const dragged = useRef(false);
   const rub = useRef<{lastX: number; accum: number; lastTrigger: number}>({lastX: -1, accum: 0, lastTrigger: 0});
   const speech = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLButtonElement>(null);
+  const chatBox = useRef<HTMLFormElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   // 女仆鲸鱼娘使用竖幅素材，给到 300px 高度；动态人偶使用 270px 竖幅，其余角色保持现有大小。
   const artHeight = visual.character.id === 'jyn' ? 300 : visual.character.type === 'puppet' ? 270 : 190;
@@ -60,25 +66,94 @@ export function Pet({visual, motion = 'idle', draggable = false}: {visual: Visua
   useEffect(() => () => {
     clearTimeout(touchTimer.current);
     clearTimeout(bubbleTimer.current);
+    clearTimeout(actionTimer.current);
   }, []);
 
   useEffect(() => {
-    // 收到新的交易/系统对话时清除本地临时交互气泡，重新展示六秒。
+    if (!visual.action) return;
+    const actionName = visual.action.name;
+    const holdMs = visual.action.durationMs ?? 4500;
+    clearTimeout(actionTimer.current);
+    setActiveAction(actionName);
+    if (actionName === 'headpat' || actionName === 'poke' || actionName === 'tail') {
+      triggerInteraction(actionName, holdMs);
+    }
+    if (body.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (actionName === 'jump' || Boolean(visual.character.customActions?.[actionName])) {
+        body.current.animate(
+          [
+            {transform: 'translateY(0) scale(1, 1)'},
+            {transform: 'translateY(-18px) scale(0.95, 1.06)'},
+            {transform: 'translateY(0) scale(1.06, 0.94)'},
+            {transform: 'translateY(-10px) scale(0.98, 1.03)'},
+            {transform: 'translateY(0) scale(1, 1)'},
+          ],
+          {duration: 680, easing: 'ease-out'},
+        );
+      } else if (actionName === 'spin') {
+        body.current.animate(
+          [
+            {transform: 'rotate(0deg) scale(1)'},
+            {transform: 'rotate(-14deg) scale(1.04) translateY(-6px)'},
+            {transform: 'rotate(14deg) scale(1.04) translateY(-6px)'},
+            {transform: 'rotate(-8deg) scale(1.02)'},
+            {transform: 'rotate(0deg) scale(1)'},
+          ],
+          {duration: 760, easing: 'ease-in-out'},
+        );
+      } else if (actionName === 'bow') {
+        body.current.animate(
+          [
+            {transform: 'rotate(0deg) translateY(0)'},
+            {transform: 'rotate(12deg) translateY(8px) scale(1.03, 0.94)'},
+            {transform: 'rotate(12deg) translateY(8px) scale(1.03, 0.94)'},
+            {transform: 'rotate(0deg) translateY(0)'},
+          ],
+          {duration: 850, easing: 'ease-in-out'},
+        );
+      } else if (actionName === 'shake') {
+        body.current.animate(
+          [
+            {transform: 'translateX(0)'},
+            {transform: 'translateX(-8px) rotate(-4deg)'},
+            {transform: 'translateX(8px) rotate(4deg)'},
+            {transform: 'translateX(-6px) rotate(-3deg)'},
+            {transform: 'translateX(6px) rotate(3deg)'},
+            {transform: 'translateX(0)'},
+          ],
+          {duration: 540, easing: 'ease-in-out'},
+        );
+      }
+    }
+    actionTimer.current = window.setTimeout(() => setActiveAction(null), holdMs);
+  }, [visual.action?.seq]);
+
+  useEffect(() => {
+    // 收到新的交易/系统/AI主动搭话时清除本地临时交互气泡，展示 10 秒便于老板阅读。
     setTempBubble(null);
     setSpeechVisible(true);
-    const timer = setTimeout(() => setSpeechVisible(false), 6000);
+    const timer = setTimeout(() => setSpeechVisible(false), 10000);
     return () => clearTimeout(timer);
   }, [visual]);
 
   useEffect(() => {
+    if (chatOpen) chatInputRef.current?.focus();
+  }, [chatOpen]);
+
+  useEffect(() => {
     if (!draggable) return;
-    // 气泡的实际高度决定外框大小，文本换行后重新测量，不保留隐藏占位。
-    const report = () => {void window.desktop.petLayout({speechHeight: speechVisible ? Math.ceil(speech.current!.getBoundingClientRect().height) : 0, width: bodyWidth, height: artHeight});};
+    // 顶部气泡与点击桌宠后展开的下方对话输入框实际高度决定外框大小。
+    const report = () => {
+      const speechH = speechVisible ? Math.ceil(speech.current!.getBoundingClientRect().height) : 0;
+      const chatH = chatOpen && chatBox.current ? Math.ceil(chatBox.current.getBoundingClientRect().height) + 6 : 0;
+      void window.desktop.petLayout({speechHeight: speechH, width: chatOpen ? Math.max(225, bodyWidth) : bodyWidth, height: artHeight + chatH});
+    };
     const observer = new ResizeObserver(report);
     observer.observe(speech.current!);
+    if (chatOpen && chatBox.current) observer.observe(chatBox.current);
     report();
     return () => observer.disconnect();
-  }, [draggable, speechVisible, displayText, bodyWidth, artHeight]);
+  }, [draggable, speechVisible, chatOpen, displayText, bodyWidth, artHeight]);
 
   useEffect(() => {
     if (!draggable) return;
@@ -171,12 +246,23 @@ export function Pet({visual, motion = 'idle', draggable = false}: {visual: Visua
       return;
     }
     if (dragged.current || event.detail >= 2) return;
-    // 单击按头部/脸胸/裙尾分区触发不同动作与台词；双击或右键打开工作台。
+    // 单击桌宠时切换显示下方对话输入框，并按点击部位触发互动反馈；双击或右键打开工作台。
+    setChatOpen(prev => !prev);
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.2;
     if (ratio < 0.36) triggerInteraction('headpat', 2200, HEADPAT_LINES);
     else if (ratio < 0.60) triggerInteraction('poke', 1800, POKE_LINES);
     else triggerInteraction('tail', 2000, TAIL_LINES);
+  }
+
+  function submitQuickChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput('');
+    setChatOpen(false);
+    showTempBubble('唔…让我想想怎么回老板…', 15000);
+    void window.desktop.sendPetChat(text);
   }
 
   return <div className="pet-scene" style={{'--pet-art-width': `${artWidth}px`, '--pet-art-height': `${artHeight}px`, '--pet-body-width': `${bodyWidth}px`} as CSSProperties}>
@@ -199,10 +285,25 @@ export function Pet({visual, motion = 'idle', draggable = false}: {visual: Visua
       onContextMenu={event => {event.preventDefault(); if (draggable) void window.desktop.showPanel();}}
     >
       {visual.character.type === 'sequence'
-        ? <SequencePet character={visual.character} emotion={visual.emotion} motion={motion} touching={touching} width={artWidth} height={artHeight} />
+        ? <SequencePet character={visual.character} emotion={visual.emotion} motion={motion} touching={touching} actionClip={activeAction} width={artWidth} height={artHeight} />
         : visual.character.type === 'puppet'
-          ? <PuppetPet character={visual.character} emotion={visual.emotion} motion={motion} touching={touching} dragging={dragging} draggable={draggable} interaction={interaction} hovered={hovered} width={artWidth} height={artHeight} />
-          : visual.character.type === 'sprite' ? <SpritePet character={visual.character} emotion={touching ? 'happy' : visual.emotion} /> : <Live2DPet character={visual.character} emotion={visual.emotion} />}
+          ? <PuppetPet character={visual.character} emotion={visual.emotion} motion={motion} touching={touching} dragging={dragging} draggable={draggable} interaction={interaction} actionPose={activeAction} hovered={hovered} width={artWidth} height={artHeight} />
+          : visual.character.type === 'sprite'
+            ? <SpritePet character={visual.character} emotion={touching ? 'happy' : visual.emotion} customSpriteUrl={activeAction ? visual.character.customActions?.[activeAction] : null} />
+            : <Live2DPet character={visual.character} emotion={visual.emotion} touching={touching} interaction={interaction} actionName={activeAction} width={artWidth} height={artHeight} />}
     </button>
+    {chatOpen && <form ref={chatBox} className="pet-chat-bubble" onSubmit={submitQuickChat}>
+      <input
+        ref={chatInputRef}
+        className="pet-chat-input"
+        value={chatInput}
+        maxLength={160}
+        onChange={event => setChatInput(event.target.value)}
+        onKeyDown={event => {if (event.key === 'Escape') setChatOpen(false);}}
+        placeholder="和它说句话…"
+        aria-label="在人偶下方直接输入与小秘书对话"
+      />
+      <button type="submit" className="pet-chat-send" disabled={!chatInput.trim()}>发送</button>
+    </form>}
   </div>;
 }

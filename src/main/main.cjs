@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const {pathToFileURL} = require('node:url');
 const local = require('./local-store.cjs');
 const characters = require('./characters.cjs');
+const ai = require('./ai.cjs');
 const {startRoaming} = require('./roaming.cjs');
 const {PET_SIZE,PET_DOCK_SIZE,PET_BODY_SIZE,petBodyBounds,movePetBody} = require('./pet-window.cjs');
 
@@ -29,10 +30,12 @@ function bootstrap() {
       for(const [k,v] of Object.entries(profile.character.states??{})) {
         if(latest.type!=='puppet'||(typeof v==='string'&&latest.puppet?.poses?.[v])) states[k]=v;
       }
-      profile={...profile,character:{...latest,name:profile.character.name||latest.name,author:profile.character.author||latest.author,license:profile.character.license||latest.license,states}};
+      const customActions={...(latest.customActions??{}),...(profile.character.customActions??{})};
+      const puppet=latest.puppet?{...latest.puppet,poses:{...latest.puppet.poses,...customActions}}:undefined;
+      profile={...profile,character:{...latest,name:profile.character.name||latest.name,author:profile.character.author||latest.author,license:profile.character.license||latest.license,states,puppet,customActions}};
     }
   }
-  return {session:session?{url:session.url,username:session.username,userId:session.userId}:null,profile,characters:list,live2dReady:runtimeReady()};
+  return {session:session?{url:session.url,username:session.username,userId:session.userId}:null,profile,characters:list,live2dReady:runtimeReady(),aiConfig:local.publicAIConfig()};
 }
 async function request(url,token,method,route,body) {
   if(!/^(GET|POST|DELETE)$/.test(method) || !/^\/api\/(auth\/(login|register)|market|stocks\/[A-Z]+\/(book|trades|chart)|me\/(account|orders|trades(?:\/history)?)|me\/orders\/by-client\/[a-zA-Z0-9-]+|orders(?:\/(?:\d+|abandon))?)(?:\?[^#]*)?$/.test(route)) throw new Error('不允许的交易所请求');
@@ -134,9 +137,22 @@ app.whenReady().then(async()=>{
   handle('logout',()=>local.logout());
   handle('request',(method,route,body)=>{const session=local.session();return request(session.url,session.token,method,route,body);});
   handle('profile:save',profile=>local.saveProfile(profile));
+  handle('ai:save',input=>local.saveAIConfig(input));
+  handle('ai:test',input=>{
+    const saved=local.readAIConfig();
+    const endpoint=local.normalizeAIEndpoint(input.endpoint||saved.endpoint);
+    const model=String(input.model||saved.model||'').trim();
+    const apiKey=String(input.apiKey||'').trim()||saved.apiKey;
+    return ai.testConnection({enabled:true,endpoint,model,apiKey});
+  });
+  handle('ai:decide',payload=>ai.decide(local.readAIConfig(),payload));
+  handle('ai:chat',payload=>ai.chat(local.readAIConfig(),payload));
+  handle('ai:proactive',payload=>ai.proactiveChat(local.readAIConfig(),payload));
+  handle('ai:review',payload=>ai.review(local.readAIConfig(),payload));
   handle('character:import',()=>characters.importCharacter());
   handle('character:save',character=>characters.saveCharacter(character));
   handle('visual:publish',value=>{visual=value;pet.webContents.send('visual',visual);});
+  handle('pet:chat',text=>{panel.webContents.send('pet:chat',String(text||''));},true);
   handle('panel:show',()=>showPanel(),true);
   handle('panel:hide',()=>panel.hide());
   handle('panel:activity',()=>renewPanelActivity());

@@ -103,6 +103,7 @@ export function PuppetPet({
   dragging,
   draggable,
   interaction = { kind: null, seq: 0 },
+  actionPose = null,
   hovered = false,
   width,
   height,
@@ -114,16 +115,18 @@ export function PuppetPet({
   dragging: boolean;
   draggable: boolean;
   interaction?: PuppetInteraction;
+  actionPose?: string | null;
   hovered?: boolean;
   width: number;
   height: number;
 }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const texturesRef = useRef<Map<string, Texture>>(new Map());
   const [ready, setReady] = useState(false);
 
   // 最新交互状态通过 ref 同步给 60fps 渲染循环，避免重建 PixiJS 应用上下文。
-  const stateRef = useRef({ emotion, motion, touching, dragging, interactionKind: interaction.kind, hovered });
-  stateRef.current = { emotion, motion, touching, dragging, interactionKind: interaction.kind, hovered };
+  const stateRef = useRef({ emotion, motion, touching, dragging, interactionKind: interaction.kind, actionPose, hovered });
+  stateRef.current = { emotion, motion, touching, dragging, interactionKind: interaction.kind, actionPose, hovered };
 
   const targetGaze = useRef({ x: 0, y: 0 });
   const pulseRef = useRef<{ jelly: number; ear: number; burstKind: Particle['kind'] | null }>({
@@ -165,7 +168,7 @@ export function PuppetPet({
     }
     // 面板模式或未启用全局信号时，根据页面指针位置估算注视方向。
     const onPointer = (event: PointerEvent) => {
-      const rect = canvas.current?.getBoundingClientRect();
+      const rect = host.current?.getBoundingClientRect();
       if (!rect || rect.width === 0) return;
       const cx = rect.left + rect.width * 0.5;
       const cy = rect.top + rect.height * 0.35;
@@ -182,6 +185,7 @@ export function PuppetPet({
     let disposed = false;
     let app: Application | null = null;
     const textures = new Map<string, Texture>();
+    texturesRef.current = textures;
     let blinkTimer = 0;
     let blinkCloseTimer = 0;
     let earTimer = 0;
@@ -205,7 +209,7 @@ export function PuppetPet({
       // 适配禁用 unsafe-eval 的渲染进程 CSP。
       const { install } = await import('@pixi/unsafe-eval');
       install(PIXI);
-      if (disposed || !canvas.current) return;
+      if (disposed || !host.current) return;
 
       for (const [key, img] of images) {
         textures.set(key, PIXI.Texture.from(img));
@@ -216,8 +220,13 @@ export function PuppetPet({
       const texW = idleTex.width;
       const texH = idleTex.height;
 
+      // 每次初始化创建全新 canvas 节点，避免复用已销毁 WebGL 上下文的旧 canvas 导致 checkMaxIfStatementsInShader(0) 报错。
+      const view = document.createElement('canvas');
+      view.className = 'puppet-pet';
+      host.current.replaceChildren(view);
+
       app = new PIXI.Application({
-        view: canvas.current,
+        view,
         width,
         height,
         resolution: window.devicePixelRatio,
@@ -305,6 +314,7 @@ export function PuppetPet({
           touching: isTouching,
           dragging: isDragging,
           interactionKind,
+          actionPose: curActionPose,
           hovered: isHovered,
         } = stateRef.current;
 
@@ -319,7 +329,7 @@ export function PuppetPet({
           walkPhase = 0;
         }
 
-        // 姿态选择优先级：拖拽 > 部位互动 > 摸头 > 走路 > 情绪/自发微动作与眨眼。
+        // 姿态选择优先级：拖拽 > 部位互动 > 摸头 > AI工具指定动作姿态 > 走路 > 情绪/自发微动作与眨眼。
         let poseKey = String(character.states[curEmotion] ?? idleKey);
         if (isDragging && puppet.drag && textures.has(puppet.drag)) {
           poseKey = puppet.drag;
@@ -331,6 +341,8 @@ export function PuppetPet({
           poseKey = 'angry';
         } else if (isTouching && puppet.touch && textures.has(puppet.touch)) {
           poseKey = puppet.touch;
+        } else if (curActionPose && textures.has(curActionPose)) {
+          poseKey = curActionPose;
         } else if (isWalking && walkCount > 0) {
           poseKey = puppet.walk![walkPhase] ?? poseKey;
         } else if (curEmotion === 'idle') {
@@ -536,14 +548,34 @@ export function PuppetPet({
       clearTimeout(microTimer);
       clearTimeout(microEndTimer);
       if (app) app.destroy(true, { children: true });
+      if (host.current) host.current.replaceChildren();
       for (const tex of textures.values()) tex.destroy(true);
       textures.clear();
     };
   }, [character.entry, width, height]);
 
+  // 动态热加载 AI 生图工具追加的新姿态贴图，无需重建 PixiJS WebGL 上下文。
+  useEffect(() => {
+    const poses = character.puppet?.poses;
+    if (!poses || !ready) return;
+    let cancelled = false;
+    async function syncNewPoses() {
+      const PIXI = await import('pixi.js');
+      for (const [key, file] of Object.entries(poses!)) {
+        if (!texturesRef.current.has(key)) {
+          const img = await loadImage(new URL(file, character.entry).href);
+          if (cancelled) return;
+          texturesRef.current.set(key, PIXI.Texture.from(img));
+        }
+      }
+    }
+    void syncNewPoses();
+    return () => { cancelled = true; };
+  }, [character.entry, character.puppet?.poses, ready]);
+
   return (
-    <canvas
-      ref={canvas}
+    <div
+      ref={host}
       className="puppet-pet"
       data-ready={ready}
       role="img"

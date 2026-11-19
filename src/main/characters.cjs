@@ -35,15 +35,17 @@ function list() {
     const saved = JSON.parse(fs.readFileSync(path.join(root(),id,'pet.json'),'utf8'));
     const base = byId.get(saved.id);
     if (base) {
-      // 内置角色包随客户端升级，保留用户自定义名称与合法状态映射，刷新最新的动画与姿态清单。
+      // 内置角色包随客户端升级，保留用户自定义名称、合法状态映射及生图追加的自定义动作。
+      const customActions = {...(base.customActions ?? {}), ...(saved.customActions ?? {})};
+      const puppet = base.puppet ? {...base.puppet, poses: {...base.puppet.poses, ...(saved.puppet?.poses ?? {}), ...customActions}} : undefined;
       const states = {...base.states};
       if (saved.states) {
         for (const emotion of emotions) {
           const val = saved.states[emotion];
-          if (base.type !== 'puppet' || (typeof val === 'string' && base.puppet?.poses?.[val])) states[emotion] = val;
+          if (base.type !== 'puppet' || (val && puppet?.poses?.[val])) states[emotion] = val;
         }
       }
-      byId.set(saved.id, {...base, name: saved.name || base.name, author: saved.author || base.author, license: saved.license || base.license, states});
+      byId.set(saved.id, {...base, name: saved.name || base.name, author: saved.author || base.author, license: saved.license || base.license, states, puppet, customActions});
     } else {
       byId.set(saved.id, saved);
     }
@@ -107,6 +109,24 @@ function saveCharacter(character) {
   }
   fs.writeFileSync(path.join(directory,'pet.json'),JSON.stringify(character,null,2),'utf8');
 }
+function appendActionSprite(characterId, actionName, pngBuffer) {
+  const current = list().find(item => item.id === characterId);
+  if (!current) throw new Error(`未找到角色：${characterId}`);
+  const cleanName = String(actionName || '').trim().replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '').slice(0, 28) || 'custom_action';
+  const fileName = `action-${Date.now()}.png`;
+  const dir = path.join(root(), current.id, 'generated');
+  fs.mkdirSync(dir, {recursive: true});
+  fs.writeFileSync(path.join(dir, fileName), pngBuffer);
+  const assetUrl = `petasset://characters/${current.id}/generated/${fileName}`;
+  const customActions = {...(current.customActions ?? {}), [cleanName]: assetUrl};
+  const next = {
+    ...current,
+    customActions,
+    puppet: current.puppet ? {...current.puppet, poses: {...current.puppet.poses, [cleanName]: assetUrl}} : current.puppet,
+  };
+  fs.writeFileSync(path.join(root(), current.id, 'pet.json'), JSON.stringify(next, null, 2), 'utf8');
+  return { name: cleanName, character: next };
+}
 function resource(url) {
   const parsed=new URL(url);
   if(parsed.hostname==='builtin' && parsed.pathname==='/default.png') return path.join(app.getAppPath(),'assets','default.png');
@@ -121,6 +141,8 @@ function resource(url) {
   const relative=decodeURIComponent(parsed.pathname.slice(1));
   if(!allowed.has(path.extname(relative).toLowerCase())) throw new Error('该文件类型不能通过角色协议访问');
   const id=relative.split('/')[0];
+  const userTarget = path.join(root(), relative);
+  if (fs.existsSync(userTarget)) return contained(root(), relative);
   return contained(packagedIds.includes(id)?packagedRoot():root(),relative);
 }
-module.exports={list,importCharacter,saveCharacter,resource};
+module.exports={list,importCharacter,saveCharacter,appendActionSprite,resource};

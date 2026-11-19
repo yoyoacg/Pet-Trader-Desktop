@@ -10,7 +10,8 @@ html.pet-window #root {
 
 /* 连续动画与 PixiJS 准 Live2D 动态人偶均由 Canvas 自行绘制，不再叠加九宫格 CSS 摇摆。 */
 .sequence-pet,
-.puppet-pet { width: var(--pet-art-width); height: var(--pet-art-height); pointer-events: none; display: block; }
+.puppet-pet,
+.live2d-pet { width: var(--pet-art-width)!important; height: var(--pet-art-height)!important; pointer-events: none; display: block; }
 /* 奶油粉气泡固定在角色上方，长句收为三行，完整文字可悬停查看。 */
 .pet-scene .pet-speech { display: flex; align-items: flex-start; gap: 7px; text-align: left; background: #fff7fa; border: 1px solid #efcadb; border-radius: 19px; box-shadow: 0 4px 12px #b56e9020; color: #805a71; }
 /* 浮动外框随气泡收缩，人偶始终以窗口底部为定位基准。 */
@@ -20,8 +21,18 @@ html.pet-window #root {
 .pet-speech-heart { color: #d88aac; font-size: 17px; line-height: 1.3; }
 .pet-speech-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .floating-pet .pet-speech { max-height: none; overflow: visible; flex-shrink: 0; padding: 10px 12px; font-size: 11px; }
-.floating-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; gap: 10px; }
+.floating-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; gap: 6px; }
 .floating-pet .pet-body { width: var(--pet-body-width); height: var(--pet-art-height); flex-shrink: 0; transform-origin: 50% 100%; }
+
+/* 人偶下方直接对话输入气泡 */
+.pet-chat-bubble { position: relative; display: flex; align-items: center; gap: 5px; width: 100%; max-width: 236px; padding: 4px 5px 4px 11px; background: #fff7fa; border: 1px solid #efcadb; border-radius: 18px; box-shadow: 0 4px 12px #b56e9024; flex-shrink: 0; -webkit-app-region: no-drag; pointer-events: auto; }
+.pet-chat-bubble::before { content: ""; position: absolute; top: -6px; left: 48%; border: 6px solid transparent; border-top: 0; border-bottom-color: #efcadb; }
+.pet-chat-input { flex: 1; min-width: 0; padding: 4px 2px; border: 0; background: transparent; color: #6e485f; font-size: 11px; outline: none; }
+.pet-chat-input::placeholder { color: #b993a8; }
+.pet-chat-input:focus-visible { outline: none; }
+.pet-chat-send { flex-shrink: 0; padding: 4px 10px; border: 0; border-radius: 13px; background: #d88aac; color: #fff; font-size: 11px; font-weight: 600; line-height: 1.3; }
+.pet-chat-send:hover:not(:disabled) { background: #c57397; }
+.pet-chat-send:disabled { opacity: .45; cursor: default; }
 
 /* 将内容限制在窗口视口内，气泡、动画和错误信息都不扩大绘制区域。 */
 .pet-window .floating-pet { width: 100%; height: 100%; overflow: hidden; contain: paint; }
@@ -72,10 +83,11 @@ html.panel-window #root { width: 100%; height: 100%; background: transparent; ov
 .panel-window .login-art h1 { margin-top: 24px; font-size: 32px; }
 .panel-window .login-sprite { width: 190px; }
 .panel-window .login-form { padding: 28px; }
-.panel-pet { position: absolute; right: 0; bottom: 0; width: 280px; height: 330px; padding: 10px; pointer-events: none; }
-.panel-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; }
+.panel-pet { position: absolute; right: 0; bottom: 0; width: 280px; height: 375px; padding: 10px; pointer-events: none; }
+.panel-pet .pet-scene { height: 100%; justify-content: flex-end; padding-top: 0; gap: 6px; }
 .panel-pet .pet-speech { display: none; }
 .panel-pet .pet-body { width: var(--pet-body-width); height: var(--pet-art-height); flex-shrink: 0; pointer-events: auto; }
+.panel-pet .pet-chat-bubble { pointer-events: auto; }
 .bubble-companion-message { flex-shrink: 0; max-height: 70px; overflow: auto; margin: 0; padding: 10px 18px; border-top: 1px solid #dce7ef; border-radius: 0 0 24px 24px; background: #f0f5fa; color: #60778b; font-size: 11px; }
 @media (max-width: 720px) {
   .bubble-idle-hint { display: none; }
@@ -143,3 +155,16 @@ html.panel-window #root { width: 100%; height: 100%; background: transparent; ov
     transform: translateY(-3px);
   }
 }
+
+/* 角色动作/表情验证栏与本地 AI 配置排版 */
+.preview-bar { margin: 14px 0; padding: 12px 14px; background: #f4f9fc; border: 1px solid #d5e7f1; border-radius: 12px; }
+.preview-bar .reactions { flex-wrap: wrap; margin-top: 8px; }
+.preview-bar .reactions button { flex: 0 0 auto; padding: 6px 11px; }
+.assistant-settings .surface label { margin-bottom: 14px; }
+.assistant-settings .surface .budget { max-width: 100%; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; color: var(--ink); }
+.checkbox-row input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--blue); }
+.chat-form { margin-top: 10px; }
+.chat-history { margin-top: 14px; padding: 12px 14px; background: #f4f9fc; border: 1px solid #d5e7f1; border-radius: 10px; display: grid; gap: 8px; }
+.chat-history p { font-size: 12px; color: var(--ink); line-height: 1.5; }
+.chat-history time { font: 10px Consolas, monospace; color: var(--muted); margin-right: 8px; }

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Character, Emotion, PetMotion } from '../../shared/types';
 
-export function SequencePet({character, emotion, motion, touching, width, height}: {character: Character; emotion: Emotion; motion: PetMotion; touching: boolean; width: number; height: number}) {
+export function SequencePet({character, emotion, motion, touching, actionClip, width, height}: {character: Character; emotion: Emotion; motion: PetMotion; touching: boolean; actionClip?: string | null; width: number; height: number}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   // 画布和帧解码都按屏幕像素密度绘制，避免高 DPI 下放大低分辨率的 190px 位图。
   const pixelWidth = Math.ceil(width * window.devicePixelRatio);
@@ -12,7 +12,13 @@ export function SequencePet({character, emotion, motion, touching, width, height
     character.animations.walkLeft[0]?.file !== character.animations.idle?.[0]?.file &&
     character.animations.walkLeft[0]?.file !== character.animations.walkRight[0]?.file
   );
-  const clip = touching ? 'touch' : (motion !== 'idle' && hasRealWalk) ? motion : character.states[emotion] as string;
+  const clip = touching
+    ? 'touch'
+    : (actionClip && character.animations?.[actionClip])
+      ? actionClip
+      : (motion !== 'idle' && hasRealWalk)
+        ? motion
+        : character.states[emotion] as string;
 
   useEffect(() => {
     const context = canvas.current!.getContext('2d')!;

@@ -108,7 +108,7 @@ function startRoaming(pet, screen, getGeometry) {
     pushGaze(cursor, bounds);
     if (drag !== null) {setMotion('idle');return;}
     if (flight !== null) {stepFlight(elapsed);return;}
-    if (!enabled || Date.now() < restUntil) {setMotion('idle');return;}
+    if (!enabled || Date.now() < restUntil || pet.isFocused()) {setMotion('idle');return;}
     if (cursor.x >= bounds.x && cursor.x < bounds.x + bounds.width && cursor.y >= bounds.y && cursor.y < bounds.y + bounds.height) {target = null;setMotion('idle');return;}
     const area = limits(bounds);
     if (target === null) target = {x: area.minX + Math.random() * (area.maxX - area.minX), y: area.minY + Math.random() * (area.maxY - area.minY)};
