@@ -20,7 +20,9 @@ export function CharacterImport({characters, current, live2dReady, change, save,
         ? <select value={current.states[emotion] as number} onChange={event => void change({...current, states: {...current.states, [emotion]: Number(event.target.value)}})}>{emotions.map((_, frame) => <option key={frame} value={frame}>第 {frame + 1} 格</option>)}</select>
         : current.type === 'sequence'
           ? <select value={current.states[emotion] as string} onChange={event => void change({...current, states: {...current.states, [emotion]: event.target.value}})}>{Object.keys(current.animations!).map(clip => <option key={clip} value={clip}>{clip}</option>)}</select>
-          : <select value={options.findIndex(option => JSON.stringify(option.value) === JSON.stringify(current.states[emotion]))} onChange={event => void change({...current, states: {...current.states, [emotion]: options[Number(event.target.value)].value}})}>{options.map((option, number) => <option key={number} value={number}>{option.label}</option>)}</select>}</label>)}</div>
+          : current.type === 'puppet'
+            ? <select value={current.states[emotion] as string} onChange={event => void change({...current, states: {...current.states, [emotion]: event.target.value}})}>{Object.keys(current.puppet!.poses).map(pose => <option key={pose} value={pose}>{pose}</option>)}</select>
+            : <select value={options.findIndex(option => JSON.stringify(option.value) === JSON.stringify(current.states[emotion]))} onChange={event => void change({...current, states: {...current.states, [emotion]: options[Number(event.target.value)].value}})}>{options.map((option, number) => <option key={number} value={number}>{option.label}</option>)}</select>}</label>)}</div>
       <button onClick={() => void save(current)}>保存角色包配置</button>
     </>}
   </section>;

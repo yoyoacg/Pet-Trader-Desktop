@@ -6,7 +6,7 @@ const { builtin, vpet } = require('./local-store.cjs');
 
 const emotions = ['idle','thinking','happy','sad','angry','proud','surprised','sleepy','working'];
 const root = () => path.join(app.getPath('userData'), 'characters');
-const packagedIds = ['ds-whale-girl', 'jyn'];
+const packagedIds = ['whale-cat-maid', 'ds-whale-girl', 'jyn'];
 const packagedRoot = () => path.join(app.getAppPath(), 'assets', 'pets');
 // 导入的女仆鲸鱼娘使用 WebP 连续帧，通过同一角色资源协议读取。
 const allowed = new Set(['.json','.moc3','.png','.webp','.jpg','.jpeg','.wav','.mp3']);
@@ -32,8 +32,21 @@ function list() {
   // 素材随 assets 分发，用户修改过的同名角色配置仍优先保留，列表不重复显示。
   const byId = new Map(characters.map(character => [character.id, character]));
   for (const id of fs.readdirSync(root()).filter(id => fs.existsSync(path.join(root(),id,'pet.json')))) {
-    const character = JSON.parse(fs.readFileSync(path.join(root(),id,'pet.json'),'utf8'));
-    byId.set(character.id,character);
+    const saved = JSON.parse(fs.readFileSync(path.join(root(),id,'pet.json'),'utf8'));
+    const base = byId.get(saved.id);
+    if (base) {
+      // 内置角色包随客户端升级，保留用户自定义名称与合法状态映射，刷新最新的动画与姿态清单。
+      const states = {...base.states};
+      if (saved.states) {
+        for (const emotion of emotions) {
+          const val = saved.states[emotion];
+          if (base.type !== 'puppet' || (typeof val === 'string' && base.puppet?.poses?.[val])) states[emotion] = val;
+        }
+      }
+      byId.set(saved.id, {...base, name: saved.name || base.name, author: saved.author || base.author, license: saved.license || base.license, states});
+    } else {
+      byId.set(saved.id, saved);
+    }
   }
   return [...byId.values()];
 }
@@ -86,6 +99,10 @@ function saveCharacter(character) {
     if(character.type==='live2d') {
       const valid=mapping.kind==='bubbleOnly' || (mapping.kind==='motion' && character.motions.some(item=>item.group===mapping.group&&item.index===mapping.index)) || (mapping.kind==='expression'&&character.expressions.includes(mapping.name));
       if(!valid) throw new Error(`Live2D 映射无效：${emotion}`);
+    }
+    if(character.type==='puppet') {
+      const poses=character.puppet?.poses;
+      if(!poses || typeof mapping!=='string' || !(mapping in poses)) throw new Error(`动态人偶映射无效：${emotion}`);
     }
   }
   fs.writeFileSync(path.join(directory,'pet.json'),JSON.stringify(character,null,2),'utf8');

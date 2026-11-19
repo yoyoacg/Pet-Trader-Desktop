@@ -18,5 +18,6 @@ contextBridge.exposeInMainWorld('desktop',{
   openVPetSource:()=>ipcRenderer.invoke('vpet:source'),
   onVisual:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('visual',listener);return()=>ipcRenderer.removeListener('visual',listener);},
   onMotion:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('pet:motion',listener);return()=>ipcRenderer.removeListener('pet:motion',listener);},
+  onGaze:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('pet:gaze',listener);return()=>ipcRenderer.removeListener('pet:gaze',listener);},
   onPetImpact:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('pet:impact',listener);return()=>ipcRenderer.removeListener('pet:impact',listener);},
 });

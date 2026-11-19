@@ -8,8 +8,9 @@ html.pet-window #root {
   overflow: hidden;
 }
 
-/* 连续动画由 Canvas 按原始帧时长播放，不再叠加九宫格的 CSS 摇摆。 */
-.sequence-pet { width: var(--pet-art-width); height: var(--pet-art-height); pointer-events: none; }
+/* 连续动画与 PixiJS 准 Live2D 动态人偶均由 Canvas 自行绘制，不再叠加九宫格 CSS 摇摆。 */
+.sequence-pet,
+.puppet-pet { width: var(--pet-art-width); height: var(--pet-art-height); pointer-events: none; display: block; }
 /* 奶油粉气泡固定在角色上方，长句收为三行，完整文字可悬停查看。 */
 .pet-scene .pet-speech { display: flex; align-items: flex-start; gap: 7px; text-align: left; background: #fff7fa; border: 1px solid #efcadb; border-radius: 19px; box-shadow: 0 4px 12px #b56e9020; color: #805a71; }
 /* 浮动外框随气泡收缩，人偶始终以窗口底部为定位基准。 */

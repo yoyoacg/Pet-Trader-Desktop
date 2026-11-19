@@ -9,8 +9,20 @@ function startRoaming(pet, screen, getGeometry) {
   let restUntil = Date.now() + 4000 + Math.random() * 8000;
   let lastTick = performance.now();
   let motion = 'idle';
+  let lastGaze = {x: 0, y: 0};
   const body = () => {const geometry = getGeometry();return petBodyBounds(pet.getContentBounds(), geometry.size, geometry.body);};
   const move = (x, y) => {const geometry = getGeometry();movePetBody(pet, x, y, geometry.size, geometry.body);};
+  function pushGaze(cursor, bounds) {
+    // 全局鼠标位置映射到 [-1, 1] 归一化注视方向，变化足够明显时再通知渲染进程。
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height * 0.35;
+    const gx = Math.max(-1, Math.min(1, (cursor.x - cx) / 360));
+    const gy = Math.max(-1, Math.min(1, (cursor.y - cy) / 360));
+    if (Math.abs(gx - lastGaze.x) + Math.abs(gy - lastGaze.y) >= 0.03) {
+      lastGaze = {x: gx, y: gy};
+      pet.webContents.send('pet:gaze', lastGaze);
+    }
+  }
   function setMotion(value) {
     if (motion === value) return;
     motion = value;
@@ -90,11 +102,13 @@ function startRoaming(pet, screen, getGeometry) {
     // 按经过时间积分，单步限制为 50ms，窗口调度变慢时不跨越整个屏幕。
     const elapsed = Math.min((now - lastTick) / 1000, .05);
     lastTick = now;
-    if (!pet.isVisible() || drag !== null) {setMotion('idle');return;}
-    if (flight !== null) {stepFlight(elapsed);return;}
-    if (!enabled || Date.now() < restUntil) {setMotion('idle');return;}
+    if (!pet.isVisible()) {setMotion('idle');return;}
     const bounds = body();
     const cursor = screen.getCursorScreenPoint();
+    pushGaze(cursor, bounds);
+    if (drag !== null) {setMotion('idle');return;}
+    if (flight !== null) {stepFlight(elapsed);return;}
+    if (!enabled || Date.now() < restUntil) {setMotion('idle');return;}
     if (cursor.x >= bounds.x && cursor.x < bounds.x + bounds.width && cursor.y >= bounds.y && cursor.y < bounds.y + bounds.height) {target = null;setMotion('idle');return;}
     const area = limits(bounds);
     if (target === null) target = {x: area.minX + Math.random() * (area.maxX - area.minX), y: area.minY + Math.random() * (area.maxY - area.minY)};

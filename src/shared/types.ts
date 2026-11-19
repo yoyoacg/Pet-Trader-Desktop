@@ -13,11 +13,19 @@ export interface Review { id: string; text: string; reacted: boolean }
 export type LiveMapping = {kind: 'bubbleOnly'} | {kind: 'motion'; group: string; index: number} | {kind: 'expression'; name: string};
 export type PetMotion = 'idle' | 'walkLeft' | 'walkRight';
 export interface AnimationFrame { file: string; durationMs: number }
+export interface PuppetConfig {
+  poses: Record<string, string>;
+  blink?: string;
+  touch?: string;
+  drag?: string;
+  walk?: string[];
+}
 export interface Character {
-  formatVersion: 1; id: string; name: string; author: string; license: string; type: 'sprite' | 'live2d' | 'sequence'; entry: string; aspectRatio: number;
+  formatVersion: 1; id: string; name: string; author: string; license: string; type: 'sprite' | 'live2d' | 'sequence' | 'puppet'; entry: string; aspectRatio: number;
   states: Record<Emotion, number | LiveMapping | string>;
   motions: {group: string; index: number}[]; expressions: string[];
   animations?: Record<string, AnimationFrame[]>;
+  puppet?: PuppetConfig;
   source?: { name: string; url: string; notice: string };
 }
 export interface Profile {
@@ -46,6 +54,7 @@ declare global {
       publish(visual: Visual): Promise<void>;
       onVisual(callback: (visual: Visual) => void): () => void;
       onMotion(callback: (motion: PetMotion) => void): () => void;
+      onGaze(callback: (gaze: {x: number; y: number}) => void): () => void;
       showPanel(): Promise<void>;
       hidePanel(): Promise<void>;
       panelActivity(): Promise<void>;

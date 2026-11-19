@@ -19,7 +19,20 @@ const runtimeReady=()=>fs.existsSync(path.join(app.getAppPath(),'vendor','live2d
 
 function bootstrap() {
   const session=local.session();
-  return {session:session?{url:session.url,username:session.username,userId:session.userId}:null,profile:session?local.readProfile(session):null,characters:characters.list(),live2dReady:runtimeReady()};
+  const list=characters.list();
+  let profile=session?local.readProfile(session):null;
+  if(profile) {
+    // 每次启动同步内置角色包的最新动画与姿态定义，防止旧存档卡在旧配置。
+    const latest=list.find(item=>item.id===profile.character?.id);
+    if(latest) {
+      const states={...latest.states};
+      for(const [k,v] of Object.entries(profile.character.states??{})) {
+        if(latest.type!=='puppet'||(typeof v==='string'&&latest.puppet?.poses?.[v])) states[k]=v;
+      }
+      profile={...profile,character:{...latest,name:profile.character.name||latest.name,author:profile.character.author||latest.author,license:profile.character.license||latest.license,states}};
+    }
+  }
+  return {session:session?{url:session.url,username:session.username,userId:session.userId}:null,profile,characters:list,live2dReady:runtimeReady()};
 }
 async function request(url,token,method,route,body) {
   if(!/^(GET|POST|DELETE)$/.test(method) || !/^\/api\/(auth\/(login|register)|market|stocks\/[A-Z]+\/(book|trades|chart)|me\/(account|orders|trades(?:\/history)?)|me\/orders\/by-client\/[a-zA-Z0-9-]+|orders(?:\/(?:\d+|abandon))?)(?:\?[^#]*)?$/.test(route)) throw new Error('不允许的交易所请求');
@@ -41,7 +54,13 @@ function load(window,view) {
   return window.loadFile(path.join(app.getAppPath(),'dist','index.html'),{query:{view}});
 }
 app.whenReady().then(async()=>{
-  protocol.handle('petasset',request=>net.fetch(pathToFileURL(characters.resource(request.url)).href));
+  protocol.handle('petasset',async request=>{
+    const response=await net.fetch(pathToFileURL(characters.resource(request.url)).href);
+    const headers=new Headers(response.headers);
+    // 允许开发服务器与本地页面将角色资源上传至 WebGL 纹理。
+    headers.set('Access-Control-Allow-Origin','*');
+    return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+  });
   const preload=path.join(__dirname,'../preload/preload.cjs');
   const work=screen.getPrimaryDisplay().workArea;
   const iconPath=path.join(app.getAppPath(),'assets',process.platform==='win32'&&fs.existsSync(path.join(app.getAppPath(),'assets','icon.ico'))?'icon.ico':'icon.png');
