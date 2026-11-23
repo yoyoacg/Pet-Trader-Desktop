@@ -28,5 +28,8 @@ jobs:
           fi
           REMOTE_URL="https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
           # actions/checkout 默认处于游离 HEAD，需显式将 origin/main 推送到 Gitee 的 main 分支
-          git push -f "$REMOTE_URL" "refs/remotes/origin/main:refs/heads/main"
-          git push -f "$REMOTE_URL" --tags
+          echo "开始推送 main"
+          git push --progress -f "$REMOTE_URL" "refs/remotes/origin/main:refs/heads/main"
+          # 单独标记标签推送，便于从日志区分两个阶段
+          echo "开始推送 tags"
+          git push --progress -f "$REMOTE_URL" --tags
