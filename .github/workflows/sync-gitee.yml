@@ -26,5 +26,7 @@ jobs:
             echo "错误：请在 Repository secrets 中配置 GITEE_USER、GITEE_TOKEN、GITEE_REPO"
             exit 1
           fi
-          git push -f "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" --all
-          git push -f "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git" --tags
+          REMOTE_URL="https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          # actions/checkout 默认处于游离 HEAD，需显式将 origin/main 推送到 Gitee 的 main 分支
+          git push -f "$REMOTE_URL" "refs/remotes/origin/main:refs/heads/main"
+          git push -f "$REMOTE_URL" --tags
