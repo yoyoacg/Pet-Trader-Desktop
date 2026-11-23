@@ -45,6 +45,11 @@ jobs:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_PORT: ${{ secrets.SERVER_PORT }}
         run: |
+          if [ -z "$SERVER_HOST" ] || [ -z "$SERVER_USER" ] || [ -z "$SERVER_SSH_KEY" ]; then
+            echo "错误：请在当前仓库 Settings -> Secrets and variables -> Actions -> Repository secrets 中配置 SERVER_HOST、SERVER_USER、SERVER_SSH_KEY"
+            exit 1
+          fi
+
           PORT="${SERVER_PORT:-22}"
           mkdir -p upload-dist
           VERSION=$(node -p "require('./package.json').version")
@@ -58,10 +63,11 @@ jobs:
           printf '{"version":"%s","exe":"%s","zip":"%s","builtAt":"%s"}\n' \
             "$VERSION" "$EXE_NAME" "$ZIP_NAME" "$BUILT_AT" > upload-dist/manifest.json
 
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          SSH_OPTS="-i ~/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=no"
+          KEY_FILE="$HOME/.ssh/deploy_key"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SSH_OPTS="-i $KEY_FILE -p $PORT -o StrictHostKeyChecking=no"
           ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p /opt/pet.yzxacg.cn/downloads && rm -f /opt/pet.yzxacg.cn/downloads/*.exe /opt/pet.yzxacg.cn/downloads/*.zip"
-          scp -i ~/.ssh/deploy_key -P "$PORT" -o StrictHostKeyChecking=no upload-dist/* "$SERVER_USER@$SERVER_HOST:/opt/pet.yzxacg.cn/downloads/"
-          ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "chmod 755 /opt/pet.yzxacg.cn /opt/pet.yzxacg.cn/downloads && chmod 644 /opt/pet.yzxacg.cn/downloads/*"
+          scp -i "$KEY_FILE" -P "$PORT" -o StrictHostKeyChecking=no upload-dist/* "$SERVER_USER@$SERVER_HOST:/opt/pet.yzxacg.cn/downloads/"
+          ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "chmod 755 /opt/pet.yzxacg.cn/downloads && chmod 644 /opt/pet.yzxacg.cn/downloads/*"
