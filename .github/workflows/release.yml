@@ -36,3 +36,32 @@ jobs:
             release/*.exe
             release/*.zip
           generate_release_notes: true # 自动根据提交记录生成更新日志
+
+      - name: 同步安装包到官网服务器
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+        run: |
+          PORT="${SERVER_PORT:-22}"
+          mkdir -p upload-dist
+          VERSION=$(node -p "require('./package.json').version")
+          EXE_SRC=$(find release -maxdepth 1 -type f -name "*.exe" | head -n 1)
+          ZIP_SRC=$(find release -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          EXE_NAME="Pet-Trader-Desktop-${VERSION}-Setup.exe"
+          ZIP_NAME="Pet-Trader-Desktop-${VERSION}-win.zip"
+          [ -n "$EXE_SRC" ] && cp "$EXE_SRC" "upload-dist/$EXE_NAME" || EXE_NAME=""
+          [ -n "$ZIP_SRC" ] && cp "$ZIP_SRC" "upload-dist/$ZIP_NAME" || ZIP_NAME=""
+          BUILT_AT=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          printf '{"version":"%s","exe":"%s","zip":"%s","builtAt":"%s"}\n' \
+            "$VERSION" "$EXE_NAME" "$ZIP_NAME" "$BUILT_AT" > upload-dist/manifest.json
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH_OPTS="-i ~/.ssh/deploy_key -p $PORT -o StrictHostKeyChecking=no"
+          ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p /opt/pet.yzxacg.cn/downloads && rm -f /opt/pet.yzxacg.cn/downloads/*.exe /opt/pet.yzxacg.cn/downloads/*.zip"
+          scp -i ~/.ssh/deploy_key -P "$PORT" -o StrictHostKeyChecking=no upload-dist/* "$SERVER_USER@$SERVER_HOST:/opt/pet.yzxacg.cn/downloads/"
+          ssh $SSH_OPTS "$SERVER_USER@$SERVER_HOST" "chmod 755 /opt/pet.yzxacg.cn /opt/pet.yzxacg.cn/downloads && chmod 644 /opt/pet.yzxacg.cn/downloads/*"
