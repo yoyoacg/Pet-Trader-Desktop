@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Trade } from '../shared/types';
-import { api, money } from './api';
+import { api, formatError, money } from './api';
 
 export function TradeHistory() {
   const [before, setBefore] = useState(0);
@@ -12,7 +12,7 @@ export function TradeHistory() {
       const data = await api<Trade[]>('GET', `/api/me/trades/history?beforeId=${before}`);
       if (!disposed) {setTrades(data);setError('');}
     }
-    const load = () => {void refresh().then(undefined, error => {if (!disposed) setError(error.message);throw error;});};
+    const load = () => {void refresh().then(undefined, error => {if (!disposed) setError(formatError(error));throw error;});};
     load();
     // 最新页随实际成交刷新，历史页保持稳定，避免阅读时记录跳动。
     const timer = before === 0 ? window.setInterval(load, 5000) : undefined;

@@ -14,8 +14,7 @@ if(!app.requestSingleInstanceLock()) app.exit(0);
 if(process.platform==='win32') app.setAppUserModelId('org.mylife.exchange');
 app.on('second-instance',()=>{void app.whenReady().then(()=>showPanel());});
 protocol.registerSchemesAsPrivileged([{scheme:'petasset',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let panel,pet,tray,showPanel;
-let visual={character:local.builtin(),emotion:'idle',text:'老板，先连接交易所。今天的行情还等着我呢。'};
+let panel,pet,tray,showPanel,visual;
 const runtimeReady=()=>fs.existsSync(path.join(app.getAppPath(),'vendor','live2dcubismcore.min.js'));
 
 function bootstrap() {
@@ -38,11 +37,24 @@ function bootstrap() {
   return {session:session?{url:session.url,username:session.username,userId:session.userId}:null,profile,characters:list,live2dReady:runtimeReady(),aiConfig:local.publicAIConfig()};
 }
 async function request(url,token,method,route,body) {
-  if(!/^(GET|POST|DELETE)$/.test(method) || !/^\/api\/(auth\/(login|register)|market|stocks\/[A-Z]+\/(book|trades|chart)|me\/(account|orders|trades(?:\/history)?)|me\/orders\/by-client\/[a-zA-Z0-9-]+|orders(?:\/(?:\d+|abandon))?)(?:\?[^#]*)?$/.test(route)) throw new Error('不允许的交易所请求');
+  if(!/^(GET|POST|DELETE)$/.test(method) || !/^\/api\/(auth\/(login|register)|market|stocks(?:\/[A-Z0-9]+\/(book|trades|chart))?|me\/(account|orders|trades(?:\/history)?)|me\/orders\/by-client\/[a-zA-Z0-9-]+|orders(?:\/(?:\d+|abandon))?)(?:\?[^#]*)?$/.test(route)) throw new Error('不允许的交易所请求');
   const headers={'Content-Type':'application/json'};
   if(token) headers.Authorization=`Bearer ${token}`;
-  const response=await fetch(new URL(route,url),{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
-  return {ok:response.ok,status:response.status,body:await response.json()};
+  let response;
+  try {
+    response=await fetch(new URL(route,url),{method,headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+  } catch(err) {
+    if(err?.name==='TimeoutError'||err?.name==='AbortError') throw new Error('连接交易所超时，请稍后重试');
+    const code=err?.cause?.code;
+    const reason=code==='ECONNREFUSED'?'服务未启动或拒绝连接':code==='ENOTFOUND'?'无法解析服务器地址':(err?.cause?.message||err?.message||'网络异常');
+    throw new Error(`无法连接交易所（${reason}）`);
+  }
+  const text=await response.text();
+  try {
+    return {ok:response.ok,status:response.status,body:text?JSON.parse(text):{}};
+  } catch {
+    throw new Error(`交易所服务响应异常（HTTP ${response.status}）`);
+  }
 }
 function handle(channel,fn,petAllowed=false) {
   ipcMain.handle(channel,async(event,...args)=>{
@@ -178,6 +190,13 @@ app.whenReady().then(async()=>{
   },true);
   // 来源链接固定为上游项目，不向页面暴露任意外部地址打开能力。
   handle('vpet:source',()=>shell.openExternal('https://github.com/LorisYounger/VPet'),true);
+  const boot=bootstrap();
+  // 主进程初始视觉状态与本地档案保持一致，避免桌宠窗口加载后闪回或回退默认形象。
+  visual={
+    character:boot.profile?boot.profile.character:boot.characters[0],
+    emotion:'idle',
+    text:boot.profile?'我在。等你开工指令，挂在交易所里的单子可不会跟着我下班。':'老板，先连接交易所。今天的行情还等着我呢。',
+  };
   pet.webContents.on('did-finish-load',()=>pet.webContents.send('visual',visual));
   await Promise.all([load(panel,'panel'),load(pet,'pet')]);
   showPanel();

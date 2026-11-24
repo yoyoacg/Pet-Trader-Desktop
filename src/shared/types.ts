@@ -3,7 +3,7 @@ export type Emotion = ("idle" | "thinking" | "happy" | "sad" | "angry" | "proud"
 export interface Stock { code: string; name: string; referenceCents: number; lastCents: number | null; volume: number; previousCloseCents: number; lowerLimitCents: number; upperLimitCents: number }
 export interface Candle { time: string; open: number; high: number; low: number; close: number; volume: number }
 export interface Position { stockCode: string; available: number; frozen: number }
-export interface Account { availableCents: number; frozenCents: number; initialEquityCents: number; positions: Position[] }
+export interface Account { availableCents: number; frozenCents: number; initialEquityCents: number; issuedCustomStocks?: number; positions: Position[] }
 export interface OrderIntent { clientOrderId: string; stockCode: string; side: 'buy' | 'sell'; priceCents: number; quantity: number }
 export interface Order extends OrderIntent { id: number; remaining: number; status: 'open' | 'filled' | 'cancelled'; createdAt: string }
 export interface Trade { id: number; stockCode: string; priceCents: number; quantity: number; side: 'buy' | 'sell'; createdAt: string }

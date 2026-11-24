@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Candle, Stock } from '../shared/types';
-import { api, money } from './api';
+import { api, formatError, money } from './api';
 
 const chartTime = (value: string) => new Date(value).toLocaleTimeString('zh-CN', {timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit'});
 const chartDate = (value: string) => new Date(value).toLocaleDateString('zh-CN', {timeZone: 'Asia/Singapore', month: '2-digit', day: '2-digit'});
@@ -93,7 +93,7 @@ export function StockChart({stock}: {stock: Stock}) {
       if (!disposed) {setCandles(data);setError('');}
     }
     // 请求错误显示并重新抛出，保留默认异常堆栈；切换股票后不写入旧响应。
-    const load = () => {void refresh().then(undefined, error => {if (!disposed) setError(error.message);throw error;});};
+    const load = () => {void refresh().then(undefined, error => {if (!disposed) setError(formatError(error));throw error;});};
     load();
     const timer = window.setInterval(load, 5000);
     return () => {disposed = true;window.clearInterval(timer);};

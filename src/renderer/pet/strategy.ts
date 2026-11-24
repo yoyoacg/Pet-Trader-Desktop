@@ -7,7 +7,7 @@ export function buildAICandidates(stocks: Stock[], account: Account, orders: Ord
   return stocks.flatMap(stock => {
     if (orders.some(order => order.stockCode === stock.code)) return [];
     const priceCents = Math.max(stock.lowerLimitCents, Math.min(stock.upperLimitCents, stock.lastCents ?? stock.referenceCents));
-    const position = account.positions.find(item => item.stockCode === stock.code)!;
+    const position = account.positions.find(item => item.stockCode === stock.code) ?? {stockCode: stock.code, available: 0, frozen: 0};
     const maxBuyQuantity = profile.banned.includes(stock.code) ? 0 : Math.floor(maxSpend / priceCents);
     const maxSellQuantity = Math.floor(position.available * 0.2);
     if (maxBuyQuantity <= 0 && maxSellQuantity <= 0) return [];
@@ -31,7 +31,7 @@ export function decideOrder(stocks: Stock[], account: Account, orders: Order[], 
     if (orders.some(order => order.stockCode === stock.code)) return [];
     // 宠物报价也遵守服务端公布的当日涨跌停区间。
     const priceCents = Math.max(stock.lowerLimitCents, Math.min(stock.upperLimitCents, Math.round((stock.lastCents ?? stock.referenceCents) * (0.98 + Math.random() * 0.04))));
-    const position = account.positions.find(item => item.stockCode === stock.code)!;
+    const position = account.positions.find(item => item.stockCode === stock.code) ?? {stockCode: stock.code, available: 0, frozen: 0};
     const buyQuantity = Math.floor(Math.min(account.availableCents * 0.2, reserved) / priceCents);
     const sellQuantity = Math.floor(position.available * 0.2);
     const options: OrderIntent[] = [];

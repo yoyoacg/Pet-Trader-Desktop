@@ -9,7 +9,8 @@ const vpet = () => JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'asset
 const defaultPersona = '嘴硬、爱邀功、实际对老板非常负责的交易小秘书';
 
 function initialProfile() {
-  return { auto: false, banned: [], budgetCents: 1000000, trust: 50, cycles: 0, persona: defaultPersona, memories: [], lastTradeId: 0, review: null, pendingOrder: null, character: builtin() };
+  // 初始档案默认角色与未登录首宠（萝莉斯 · VPet）保持一致，避免登录后切换成阿废。
+  return { auto: false, banned: [], budgetCents: 1000000, trust: 50, cycles: 0, persona: defaultPersona, memories: [], lastTradeId: 0, review: null, pendingOrder: null, character: vpet() };
 }
 function session() {
   const target = file('session.json');

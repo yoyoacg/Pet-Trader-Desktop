@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Account, AIConfig, Book, Bootstrap, Character, Emotion, Order, OrderIntent, PetMotion, Profile, Session, Stock, Trade, Visual } from '../shared/types';
-import { api, money } from './api';
+import { api, formatError, money } from './api';
 import { buildAICandidates, decideOrder } from './pet/strategy';
 import { remember, review } from './pet/memory';
 import { idleDialogue, offlineChatReply, tradeDialogue } from './pet/dialogue';
@@ -19,7 +19,7 @@ function PetWindow() {
     const remove = window.desktop.onVisual(setVisual);
     const removeMotion = window.desktop.onMotion(setMotion);
     // 动画文件 IO 错误显示在宠物窗口，同时保留默认的完整控制台异常。
-    const rejected = (event: PromiseRejectionEvent) => setAnimationError(String(event.reason.message));
+    const rejected = (event: PromiseRejectionEvent) => setAnimationError(formatError(event.reason));
     window.addEventListener('unhandledrejection', rejected);
     void window.desktop.bootstrap().then(data => {
       if (data.profile) setVisual({character: data.profile.character, ...idleDialogue(data.profile)});
@@ -74,7 +74,7 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const nextProactiveAt = useRef(Date.now() + 35000);
   const [updated, setUpdated] = useState('尚未连接');
   // 默认服务端地址由桌面端 .env 配置，缺失或格式错误直接报错。
-  const [url, setURL] = useState(() => new URL(import.meta.env.VITE_API_BASE_URL).origin);
+  const [url] = useState(() => new URL(import.meta.env.VITE_API_BASE_URL).origin);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [register, setRegister] = useState(false);
@@ -90,6 +90,10 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
   const [aiImageModel, setAIImageModel] = useState('');
   const [aiKey, setAIKey] = useState('');
   const [aiStatus, setAIStatus] = useState('');
+  const [stockCode, setStockCode] = useState('');
+  const [stockName, setStockName] = useState('');
+  const [stockPrice, setStockPrice] = useState('10');
+  const [stockStatus, setStockStatus] = useState('');
   const actionSeq = useRef(0);
   useEffect(() => onVisual(visual), [visual, onVisual]);
 
@@ -102,15 +106,22 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     if (data.profile) {
       setBudget(String(data.profile.budgetCents / 100));
       setPersona(data.profile.persona);
-      setVisual({character: data.profile.character, ...idleDialogue(data.profile)});
     }
-    else setVisual({character: data.characters[0], emotion: 'idle', text: '老板，连接交易所就能开工了。'});
+    const nextVisual: Visual = data.profile
+      ? {character: data.profile.character, ...idleDialogue(data.profile)}
+      : {character: data.characters[0], emotion: 'idle', text: '老板，连接交易所就能开工了。'};
+    setVisual(nextVisual);
+    // 启动、登录或恢复档案时同步到独立桌宠窗口，确保面板与桌宠始终一致。
+    void window.desktop.publish(nextVisual);
     setReady(true);
   }
   useEffect(() => {
-    // 异步入口的错误展示给用户，同时保留浏览器默认的完整异常堆栈。
-    const rejected = (event: PromiseRejectionEvent) => {setError(String(event.reason.stack)); setUpdated('连接或操作失败 · 挂单状态请核对');};
-    const failed = (event: ErrorEvent) => setError(String(event.error.stack));
+    // 异步入口的错误转为可读提示展示给用户，同时保留浏览器默认的完整异常堆栈。
+    const rejected = (event: PromiseRejectionEvent) => {
+      setError(formatError(event.reason));
+      if (current.current) setUpdated('连接或操作失败 · 挂单状态请核对');
+    };
+    const failed = (event: ErrorEvent) => setError(formatError(event.error ?? event.message));
     window.addEventListener('unhandledrejection', rejected);
     window.addEventListener('error', failed);
     void window.desktop.bootstrap().then(restore);
@@ -175,15 +186,21 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     const recent = baseProfile.memories.slice(-20);
     const trades = recent.filter(item => item.kind === 'trade');
     const criticism = recent.findLast(item => item.kind === 'reaction');
-    const result = await window.desktop.aiReview({
-      cycles: baseProfile.cycles + 1,
-      persona: baseProfile.persona,
-      trust: baseProfile.trust,
-      tradeCount: trades.length,
-      criticism: criticism ? criticism.text : '',
-      recentMemories: recent.slice(-8).map(item => item.text),
-    });
-    return result.text;
+    try {
+      const result = await window.desktop.aiReview({
+        cycles: baseProfile.cycles + 1,
+        persona: baseProfile.persona,
+        trust: baseProfile.trust,
+        tradeCount: trades.length,
+        criticism: criticism ? criticism.text : '',
+        recentMemories: recent.slice(-8).map(item => item.text),
+      });
+      return result.text;
+    } catch (err) {
+      // 复盘文本润色失败时回退本地默认复盘，不中断交易循环。
+      console.warn('AI 复盘生成失败，回退本地复盘文本', err);
+      return undefined;
+    }
   }
   // 网络请求可能超过轮询间隔，禁止两个本地循环重叠提交委托。
   function perform(task: () => Promise<void>) {
@@ -207,7 +224,13 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
         });
         const latestTrade = page[page.length - 1];
         if (aiConfigRef.current.enabled) {
-          await triggerProactiveChat(`刚达成一笔真实成交：${latestTrade.side === 'buy' ? '买入' : '卖出'} ${latestTrade.quantity} 股 ${latestTrade.stockCode}，成交单价 ${money(latestTrade.priceCents)}`);
+          try {
+            await triggerProactiveChat(`刚达成一笔真实成交：${latestTrade.side === 'buy' ? '买入' : '卖出'} ${latestTrade.quantity} 股 ${latestTrade.stockCode}，成交单价 ${money(latestTrade.priceCents)}`);
+          } catch (err) {
+            // AI 播报失败时回退到本地成交台词，避免打断后续对账或误报交易异常。
+            console.warn('AI 成交播报失败，回退本地台词', err);
+            const response = tradeDialogue(latestTrade); await speak(response.emotion, response.text);
+          }
         } else {
           const response = tradeDialogue(latestTrade); await speak(response.emotion, response.text);
         }
@@ -271,7 +294,12 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     }
     // 开启本地 AI 后，即使未开启自动交易或在巡市间隙，小秘书也会每隔 40–75 秒主动找老板搭话陪伴。
     if (aiConfigRef.current.enabled && Date.now() >= nextProactiveAt.current && Date.now() - lastSpokenAt.current >= 25000) {
-      await triggerProactiveChat(current.current!.auto ? '日常盯盘间隙主动找老板闲聊陪伴' : '待命休息时主动关心或调侃老板');
+      try {
+        await triggerProactiveChat(current.current!.auto ? '日常盯盘间隙主动找老板闲聊陪伴' : '待命休息时主动关心或调侃老板');
+      } catch (err) {
+        // 后台闲聊失败仅记录警告，不阻断行情轮询，也不弹出撤单/下单风险提示框。
+        console.warn('AI 主动搭话失败', err);
+      }
     }
   }
   async function submitPending() {
@@ -416,46 +444,96 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
     });
   }, [characters]);
   async function saveAISetting() {
-    const saved = await window.desktop.saveAIConfig({
-      enabled: aiEnabled,
-      endpoint: aiEndpoint,
-      model: aiModel,
-      imageEndpoint: aiImageEndpoint,
-      imageModel: aiImageModel,
-      apiKey: aiKey,
-    });
-    setAIConfig(saved); aiConfigRef.current = saved;
-    setAIEnabled(saved.enabled); setAIEndpoint(saved.endpoint); setAIModel(saved.model);
-    setAIImageEndpoint(saved.imageEndpoint); setAIImageModel(saved.imageModel); setAIKey('');
-    setAIStatus(saved.enabled ? `已保存并启用（${saved.endpoint}）` : '配置已保存（未启用）');
-    await speak('happy', saved.enabled ? '本地 AI 接口已启用，随时可以点“测试连接”或直接跟我说话验证！' : '本地 AI 配置已保存，当前使用本地规则策略。');
+    try {
+      const saved = await window.desktop.saveAIConfig({
+        enabled: aiEnabled,
+        endpoint: aiEndpoint,
+        model: aiModel,
+        imageEndpoint: aiImageEndpoint,
+        imageModel: aiImageModel,
+        apiKey: aiKey,
+      });
+      setAIConfig(saved); aiConfigRef.current = saved;
+      setAIEnabled(saved.enabled); setAIEndpoint(saved.endpoint); setAIModel(saved.model);
+      setAIImageEndpoint(saved.imageEndpoint); setAIImageModel(saved.imageModel); setAIKey('');
+      setAIStatus(saved.enabled ? `已保存并启用（${saved.endpoint}）` : '配置已保存（未启用）');
+      await speak('happy', saved.enabled ? '本地 AI 接口已启用，随时可以点“测试连接”或直接跟我说话验证！' : '本地 AI 配置已保存，当前使用本地规则策略。');
+    } catch (err) {
+      setAIStatus(`保存失败：${formatError(err)}`);
+    }
   }
   async function testAISetting() {
     setAIStatus('正在向模型发送连接测试请求…');
-    const result = await window.desktop.testAIConfig({
-      endpoint: aiEndpoint,
-      model: aiModel,
-      apiKey: aiKey,
-    });
-    setAIStatus(`连接成功 · 响应模型：${result.model} · 回复：“${result.reply}”`);
-    await speak(result.emotion, result.reply);
+    try {
+      const result = await window.desktop.testAIConfig({
+        endpoint: aiEndpoint,
+        model: aiModel,
+        apiKey: aiKey,
+      });
+      setAIStatus(`连接成功 · 响应模型：${result.model} · 回复：“${result.reply}”`);
+      await speak(result.emotion, result.reply);
+    } catch (err) {
+      setAIStatus(`连接失败：${formatError(err)}`);
+    }
+  }
+  async function issueCustomStock(event: FormEvent) {
+    event.preventDefault();
+    const code = stockCode.trim().toUpperCase();
+    const name = stockName.trim();
+    const referenceCents = Math.round(Number(stockPrice) * 100);
+    if (!/^[A-Z0-9]{2,8}$/.test(code)) {
+      setStockStatus('发行失败：股票代码须为 2–8 位英文字母或数字');
+      return;
+    }
+    if (!name || name.length > 24) {
+      setStockStatus('发行失败：股票名称不能为空且不超过 24 个字');
+      return;
+    }
+    if (!Number.isSafeInteger(referenceCents) || referenceCents < 100 || referenceCents > 10000) {
+      setStockStatus('发行失败：初始参考价范围为 1.00–100.00 虚拟元');
+      return;
+    }
+    setStockStatus('正在提交新股上市申请…');
+    try {
+      const created = await api<Stock>('POST', '/api/stocks', {code, name, referenceCents});
+      await mutate(value => remember(value, 'command', `老板发行了自定义股票 ${created.name}（${created.code}），初始参考价 ${money(created.referenceCents)} 元`, created.code));
+      selectedRef.current = created.code;
+      setSelected(created.code);
+      setStockCode('');
+      setStockName('');
+      setStockPrice('10');
+      setStockStatus(`已成功上市：${created.name}（${created.code}），并已获得 100 股初始股本`);
+      await speak('proud', `恭喜老板！我们的专属股票「${created.name}（${created.code}）」正式挂牌上市啦！`);
+      await synchronize();
+    } catch (err) {
+      setStockStatus(`发行失败：${formatError(err)}`);
+    }
   }
   async function logout() {
     await mutate(value => ({...value, auto: false}));
     await window.desktop.logout();
     const character = current.current!.character;
-    current.current = null;setSession(null);setProfile(null);setAccount(null);setOrders([]);setStocks([]);setVisual({character, emotion: 'idle', text: '老板，重新连接交易所就能开工了。'});setUpdated('已退出 · 服务器挂单仍有效');
+    const nextVisual: Visual = {character, emotion: 'idle', text: '老板，重新连接交易所就能开工了。'};
+    current.current = null;setSession(null);setProfile(null);setAccount(null);setOrders([]);setStocks([]);setVisual(nextVisual);setUpdated('已退出 · 服务器挂单仍有效');
+    await window.desktop.publish(nextVisual);
   }
 
-  if (!ready) return <main className="loading">正在打开本地宠物档案…{error && <pre>{error}</pre>}</main>;
-  if (!session) return <main className="login-page"><div className="login-art"><span className="wordmark">MY LIFE / 废话交易所</span><h1>认真养宠。<br />荒谬交易。</h1><p>让你的小秘书，加入所有人的废话市场。</p><img src="petasset://builtin/default.png" className="login-sprite" alt="九种表情的阿废" /><span className="caption">虚拟资金 · 共享行情 · 本地记忆</span></div><form className="login-form" onSubmit={login}><span className="eyebrow">小秘书准备就绪</span><h2>{register ? '领取营业账户' : '回到交易工作台'}</h2><label>交易所地址<input required type="url" value={url} onChange={event => setURL(event.target.value)} /></label><label>用户名<input required autoComplete="username" minLength={3} maxLength={24} pattern="[a-zA-Z0-9]+" value={username} onChange={event => setUsername(event.target.value)} placeholder="3–24 位英文字母或数字" /></label><label>密码<input required autoComplete={register ? 'new-password' : 'current-password'} type="password" minLength={8} maxLength={72} value={password} onChange={event => setPassword(event.target.value)} /></label><button className="primary" disabled={busy}>{busy ? '正在连接…' : register ? '注册并登录' : '登录交易所'}</button><button type="button" className="text-button" onClick={() => setRegister(!register)}>{register ? '已有账户，直接登录' : '还没账户？注册领取虚拟资产'}</button><p className="hint">上线公共服务时填写运营者提供的 HTTPS 地址。角色模型、对话与 AI 密钥不会发给交易所。</p>{error && <pre className="error" role="alert">{error}</pre>}</form></main>;
+  if (!ready) return <main className="loading">正在打开本地宠物档案…{error && <p className="error" role="alert">{error}</p>}</main>;
+  if (!session) return <main className="login-page"><div className="login-art"><span className="wordmark">MY LIFE / 废话交易所</span><h1>认真养宠。<br />荒谬交易。</h1><p>让你的小秘书，加入所有人的废话市场。</p><img src="petasset://builtin/default.png" className="login-sprite" alt="九种表情的阿废" /><span className="caption">虚拟资金 · 共享行情 · 本地记忆</span></div><form className="login-form" onSubmit={login}><span className="eyebrow">小秘书准备就绪</span><h2>{register ? '领取营业账户' : '回到交易工作台'}</h2><label>用户名<input required autoComplete="username" minLength={3} maxLength={24} pattern="[a-zA-Z0-9]+" value={username} onChange={event => setUsername(event.target.value)} placeholder="3–24 位英文字母或数字" /></label><label>密码<input required autoComplete={register ? 'new-password' : 'current-password'} type="password" minLength={8} maxLength={72} value={password} onChange={event => setPassword(event.target.value)} /></label><button className="primary" disabled={busy}>{busy ? '正在连接…' : register ? '注册并登录' : '登录交易所'}</button><button type="button" className="text-button" onClick={() => {setRegister(!register);setError('');}}>{register ? '已有账户，直接登录' : '还没账户？注册领取虚拟资产'}</button><p className="hint">角色模型、对话与 AI 密钥只保存在本机，不会发给交易所。</p>{error && <p className="error" role="alert">{error}</p>}</form></main>;
 
-  const equity = account ? account.availableCents + account.frozenCents + account.positions.reduce((sum, position) => {const stock = stocks.find(item => item.code === position.stockCode)!;return sum + (position.available + position.frozen) * (stock.lastCents ?? stock.referenceCents);}, 0) : 0;
+  const equity = account ? account.availableCents + account.frozenCents + account.positions.reduce((sum, position) => {
+    const stock = stocks.find(item => item.code === position.stockCode);
+    return sum + (stock ? (position.available + position.frozen) * (stock.lastCents ?? stock.referenceCents) : 0);
+  }, 0) : 0;
+  const customStockQuota = equity >= 10_000_000 ? 1 + Math.floor((equity - 10_000_000) / 50_000_000) : 0;
+  const issuedCustomStocks = account?.issuedCustomStocks ?? 0;
+  const remainingCustomQuota = Math.max(0, customStockQuota - issuedCustomStocks);
+  const nextCustomStockTarget = 10_000_000 + issuedCustomStocks * 50_000_000;
   // 行情占据主界面，账户和托管设置改为顶部页签，移除两侧栏。
   return <div className={`workbench terminal-workbench ${tab}-view`}>
     <div className="workbench-topbar"><nav aria-label="工作台功能">{[['market','行情'],['trades','交易记录'],['assistant','账户与托管'],['character','我的小秘书'],['memory','共同记忆']].map(([key, label]) => <button aria-pressed={tab === key} key={key} onClick={() => setTab(key)}>{label}</button>)}</nav><button className="workbench-logout" disabled={busy} onClick={() => perform(logout)}>退出账户</button></div>
-    <main className="workspace"><div className="workbench-status"><span><span className="status-dot" />{profile!.auto ? '宠物正在营业' : '宠物待命中'} · {session.username}</span><span title={session.url}>{updated}</span></div>
-      {error && <div className="error-box" role="alert"><button className="text-button" onClick={() => setError('')}>收起错误</button><pre>{error}</pre><p>撤单或下单失败时，服务器已有挂单仍可能成交。请核对后再操作。</p></div>}
+    <main className="workspace"><div className="workbench-status"><span><span className="status-dot" />{profile!.auto ? '宠物正在营业' : '宠物待命中'} · {session.username}</span><span>{updated}</span></div>
+      {error && <div className="error-box" role="alert"><button className="text-button" onClick={() => setError('')}>收起</button><p className="error-message">{error}</p><p className="error-tip">若涉及下单或撤单操作，服务器已有挂单仍可能成交，请核对后再操作。</p></div>}
       {tab === 'assistant' && <div className="summary"><div><span>账户总资产</span><strong>{account ? money(equity) : '—'}<small>虚拟元</small></strong><p>{account ? `相对初始资产 ${money(equity - account.initialEquityCents)}` : '等待交易所数据'}</p></div><div><span>可用现金</span><strong>{account ? money(account.availableCents) : '—'}</strong><p>冻结 {account ? money(account.frozenCents) : '—'}</p></div><div><span>小秘书的信任</span><strong>{profile!.trust}<small>/ 100</small></strong><p>它记得被怎样对待</p></div></div>}
       <div className="workbench-panels">{tab !== 'assistant' && <div className="content-column">
         {tab === 'market' && account && <TradingPanel stocks={stocks} account={account} orders={orders} profile={profile!} book={book} selected={selected} select={code => {selectedRef.current = code;setSelected(code);setBook(null);perform(async () => setBook(await api<Book>('GET', `/api/stocks/${code}/book`)));}} cancel={id => perform(async () => {await api('DELETE', `/api/orders/${id}`);await mutate(value => remember(value, 'command', `老板撤销委托 #${id}`));await synchronize();})} ban={code => perform(() => ban(code))} busy={busy} place={async intent => {await perform(() => placeManualOrder(intent));}} />}
@@ -464,6 +542,18 @@ function Workbench({onVisual}: {onVisual: (visual: Visual | null) => void}) {
         {tab === 'character' && <CharacterImport characters={characters} current={profile!.character} live2dReady={live2dReady} change={changeCharacter} importFile={importFile} preview={speak} save={async character => {await window.desktop.saveCharacter(character);setCharacters(items => items.map(item => item.id === character.id ? character : item));await speak('happy', '角色包配置已经保存在本机。');}} />}
         {tab === 'memory' && <section className="surface"><div className="section-head"><div><h2>共同经历</h2><p>保存在这台电脑，交易所看不到。</p></div><span className="badge">{profile!.memories.length} 条</span></div>{profile!.memories.length === 0 && <p className="empty">你们的第一段经历还没发生。先让它开始营业吧。</p>}<div className="memory-list">{profile!.memories.slice(-80).reverse().map(memory => <article key={memory.id}><time>{new Date(memory.time).toLocaleString('zh-CN')}</time><p>{memory.text}</p></article>)}</div></section>}
       </div>}{tab === 'assistant' && <section className="assistant-settings"><section className="pet-card"><span className="caption">{profile!.character.name} / 你的专属小秘书（{aiConfig.enabled ? '本地 AI 驱动中' : '本地预设规则'}）</span><button className="primary" disabled={busy || (!profile!.auto && profile!.pendingOrder !== null)} onClick={() => perform(toggleAuto)}>{profile!.auto ? '暂停并撤销挂单' : '让它开始营业'}</button><label>交易资金上限 · 虚拟元<div className="budget"><input type="number" min="0" step="0.01" value={budget} onChange={event => setBudget(event.target.value)} /><button disabled={busy} onClick={() => perform(async () => {const cents = Math.round(Number(budget) * 100);if (!Number.isSafeInteger(cents) || cents < 0) throw new Error('资金上限必须为非负金额');await mutate(value => remember({...value, budgetCents: cents}, 'command', `老板把交易预算改为 ${money(cents)}，只影响后续买单。`));await speak('idle', '新预算记下了，已经挂出的单子不会因此自动撤销。');})}>保存</button></div></label><p className="hint">每分钟决定一次，每次最多使用可用现金的 20%。暂停会请求撤单，退出账户会保留挂单。</p></section>
+        <section className="surface">
+          <div className="section-head"><div><h2>发行自定义股</h2><p>总资产满 10 万虚拟元可发行第 1 只自定义股，之后每增加 50 万可再发 1 只（发行后获得 100 股初始股本）。</p></div><span className="badge">已发 {issuedCustomStocks} / 可发 {customStockQuota} 只</span></div>
+          {remainingCustomQuota === 0 && <p className="hint">距离解锁第 {issuedCustomStocks + 1} 只自定义股还差 {money(Math.max(0, nextCustomStockTarget - equity))} 虚拟元（需总资产达到 {money(nextCustomStockTarget)} 元）。</p>}
+          <form onSubmit={event => void perform(() => issueCustomStock(event))}>
+            <div className="field-row">
+              <label>股票代码（2–8 位字母或数字）<input required minLength={2} maxLength={8} pattern="[a-zA-Z0-9]+" value={stockCode} onChange={event => setStockCode(event.target.value.toUpperCase())} placeholder="如 MYLIFE" disabled={busy || remainingCustomQuota === 0} /></label>
+              <label>股票名称（1–24 字）<input required maxLength={24} value={stockName} onChange={event => setStockName(event.target.value)} placeholder="如 老板的小目标" disabled={busy || remainingCustomQuota === 0} /></label>
+            </div>
+            <label>初始参考价（1.00–100.00 虚拟元）<div className="budget"><input type="number" required min="1" max="100" step="0.01" value={stockPrice} onChange={event => setStockPrice(event.target.value)} disabled={busy || remainingCustomQuota === 0} /><button type="submit" className="primary" disabled={busy || remainingCustomQuota === 0 || !stockCode.trim() || !stockName.trim()}>发行上市</button></div></label>
+          </form>
+          {stockStatus && <p className="notice">{stockStatus}</p>}
+        </section>
         <section className="surface">
           <div className="section-head"><div><h2>小秘书人设与互动对话</h2><p>开启本地 AI 后，小秘书平时会主动找你搭话闲聊；对话与人设只保存在本机。</p></div>{aiConfig.enabled && <button type="button" disabled={busy} onClick={() => perform(() => triggerProactiveChat('老板点了一下你，主动跟老板聊两句'))}>让它主动找我聊聊</button>}</div>
           <label>小秘书性格与人设设定<div className="budget"><input value={persona} maxLength={160} onChange={event => setPersona(event.target.value)} placeholder="例如：嘴硬、爱邀功、实际对老板非常负责的交易小秘书" /><button type="button" disabled={busy} onClick={() => perform(savePersonaSetting)}>保存人设</button></div></label>

@@ -34,7 +34,7 @@ function OrderTicket({stock, account, side, setSide, busy, place}: {
   const [quantity, setQuantity] = useState('1');
   const [clientOrderId, setClientOrderId] = useState(() => crypto.randomUUID());
   useEffect(() => {setClientOrderId(crypto.randomUUID());}, [side]);
-  const position = account.positions.find(item => item.stockCode === stock.code)!;
+  const position = account.positions.find(item => item.stockCode === stock.code) ?? {stockCode: stock.code, available: 0, frozen: 0};
   const priceCents = Math.round(Number(price) * 100);
   // 价格输入正在编辑时可以暂时为空或为零，此时不计算可买数量。
   const available = side === 'buy' ? (priceCents > 0 ? Math.floor(account.availableCents / priceCents) : 0) : position.available;
@@ -68,7 +68,10 @@ export function TradingPanel({stocks, account, orders, profile, book, selected, 
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const stock = stocks.find(item => item.code === selected)!;
   const filtered = stocks.filter(item => `${item.code} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()));
-  const marketValue = account.positions.reduce((sum, position) => sum + (position.available + position.frozen) * priceOf(stocks.find(item => item.code === position.stockCode)!), 0);
+  const marketValue = account.positions.reduce((sum, position) => {
+    const item = stocks.find(value => value.code === position.stockCode);
+    return sum + (item ? (position.available + position.frozen) * priceOf(item) : 0);
+  }, 0);
   return <div className="trading-terminal">
     <div className="terminal-ticker"><div className="terminal-brand"><b>废</b><div><strong>废话交易所</strong><small>MY LIFE TERMINAL</small></div></div>
       <div className="terminal-ticker-stocks">{stocks.slice(0, 3).map(item => <button key={item.code} onClick={() => select(item.code)}><span>{item.name}</span><b className={direction(item)}>{money(priceOf(item))}</b><em className={direction(item)}>{percent(item)}</em></button>)}</div>
@@ -87,7 +90,7 @@ export function TradingPanel({stocks, account, orders, profile, book, selected, 
     <section className="terminal-bottom"><div className="terminal-bottom-tabs" role="group" aria-label="交易数据">{[['positions', '持仓'], ['orders', `当前委托 (${orders.length})`], ['trades', '成交记录'], ['funds', '资金概览']].map(([value, label]) => <button key={value} aria-pressed={bottomTab === value} onClick={() => setBottomTab(value)}>{label}</button>)}</div>
       <div className="terminal-bottom-content">
         {bottomTab === 'positions' && <div className="table-scroll"><table><thead><tr><th>证券名称</th><th>持仓数量</th><th>可用数量</th><th>冻结数量</th><th>现价</th><th>市值</th><th>宠物买入权限</th><th>操作</th></tr></thead><tbody>{stocks.map(item => {
-          const position = account.positions.find(value => value.stockCode === item.code)!;
+          const position = account.positions.find(value => value.stockCode === item.code) ?? {stockCode: item.code, available: 0, frozen: 0};
           const blocked = profile.banned.includes(item.code);
           return <tr key={item.code}><td><button className="terminal-stock-link" onClick={() => select(item.code)}>{item.name}<small>{item.code}</small></button></td><td>{position.available + position.frozen}</td><td>{position.available}</td><td>{position.frozen}</td><td className={direction(item)}>{money(priceOf(item))}</td><td>{money((position.available + position.frozen) * priceOf(item))}</td><td><button disabled={busy} onClick={() => ban(item.code)}>{blocked ? '已禁买 · 解除' : '允许 · 禁买'}</button></td><td><button className="terminal-sell" disabled={busy || position.available === 0} onClick={() => {select(item.code);setSide('sell');}}>卖出</button></td></tr>;
         })}</tbody></table></div>}

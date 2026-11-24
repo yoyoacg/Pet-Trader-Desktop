@@ -56,19 +56,34 @@ async function requestLLM(config, systemPrompt, userPayload) {
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(userPayload) },
-      ],
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
+  let response;
+  try {
+    response = await fetch(config.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: JSON.stringify(userPayload) },
+        ],
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+  } catch (err) {
+    // 透出底层连接失败原因并转为中文描述，避免只看到笼统的 fetch failed。
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      throw new Error(`本地 AI 接口响应超时（${config.endpoint}）`);
+    }
+    const code = err?.cause?.code;
+    const detail = code === 'ECONNREFUSED'
+      ? '服务未启动或拒绝连接'
+      : code === 'ENOTFOUND'
+        ? '无法解析主机地址'
+        : (err?.cause?.message || err?.message || String(err));
+    throw new Error(`无法连接本地 AI 接口（${config.endpoint}）：${detail}`);
+  }
   if (!response.ok) {
     throw new Error(`本地 AI 服务返回 HTTP ${response.status}`);
   }
@@ -196,18 +211,25 @@ async function generateActionSpriteBuffer(config, actionName, promptText) {
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
   }
-  const response = await fetch(targetUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: imageModel || config.model,
-      prompt: `${promptText || actionName}, cute anime desktop pet character action sprite, full body, clean transparent background`,
-      n: 1,
-      size: '512x512',
-      response_format: 'b64_json',
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
+  let response;
+  try {
+    response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: imageModel || config.model,
+        prompt: `${promptText || actionName}, cute anime desktop pet character action sprite, full body, clean transparent background`,
+        n: 1,
+        size: '512x512',
+        response_format: 'b64_json',
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch (err) {
+    // 透出底层连接失败原因，方便排查生图接口不可达问题。
+    const detail = err?.cause?.code || err?.cause?.message || err?.message || String(err);
+    throw new Error(`无法连接生图接口（${targetUrl}）：${detail}`);
+  }
   if (!response.ok) {
     throw new Error(`生图模型服务返回 HTTP ${response.status}`);
   }
