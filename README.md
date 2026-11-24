@@ -43,7 +43,7 @@ npm run dev
 ## 目录结构
 
 ```text
-├── .github/workflows/   # GitHub Actions 自动构建 Release 与 Gitee 镜像同步
+├── .github/workflows/   # GitHub Actions 自动构建 Release
 ├── assets/              # 宠物素材、VPet 动画与程序图标
 ├── scripts/             # 本地开发启动与素材下载脚本
 ├── src/
